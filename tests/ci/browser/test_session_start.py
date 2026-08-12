@@ -11,6 +11,7 @@ Tests cover:
 
 import asyncio
 import logging
+import sys
 
 import pytest
 
@@ -57,6 +58,120 @@ class TestBrowserSessionStart:
 		# Start the session again - should return immediately without re-initialization
 		await browser_session.start()
 		assert browser_session._cdp_client_root is not None
+
+	async def test_local_browser_bootstrap_runs_before_start_event(self, monkeypatch):
+		"""Ensure browser installation completes before the timed start event is dispatched."""
+		session = BrowserSession(browser_profile=BrowserProfile(headless=True, user_data_dir=None))
+		event_order: list[str] = []
+
+		class PreparedBrowserWatchdog:
+			async def prepare_browser_executable(self) -> str:
+				event_order.append('prepare')
+				return '/tmp/prepared-chromium'
+
+		class StartEvent:
+			def __await__(self):
+				async def wait_for_event() -> None:
+					event_order.append('await_event')
+
+				return wait_for_event().__await__()
+
+			async def event_result(self, **kwargs) -> None:
+				event_order.append('event_result')
+
+		async def attach_watchdogs(browser_session: BrowserSession) -> None:
+			event_order.append('attach')
+			browser_session._local_browser_watchdog = PreparedBrowserWatchdog()
+
+		def dispatch_start_event(event_bus, event):
+			event_order.append('dispatch')
+			return StartEvent()
+
+		def prepare_default_extensions(browser_profile: BrowserProfile) -> list[str]:
+			event_order.append('prepare_extensions')
+			return []
+
+		monkeypatch.setattr(BrowserSession, 'attach_all_watchdogs', attach_watchdogs)
+		monkeypatch.setattr(type(session.event_bus), 'dispatch', dispatch_start_event)
+		monkeypatch.setattr(BrowserProfile, 'prepare_default_extensions', prepare_default_extensions)
+
+		await session.start()
+
+		assert event_order == ['attach', 'prepare', 'prepare_extensions', 'dispatch', 'await_event', 'event_result']
+
+	async def test_cdp_wait_reports_early_browser_exit(self):
+		"""A browser process that exits before CDP readiness must fail immediately with diagnostics."""
+		from browser_use.browser.watchdogs.local_browser_watchdog import LocalBrowserWatchdog
+
+		browser_process = await asyncio.create_subprocess_exec(
+			sys.executable,
+			'-c',
+			'import sys; print("browser failed", file=sys.stderr); raise SystemExit(7)',
+			stdout=asyncio.subprocess.PIPE,
+			stderr=asyncio.subprocess.PIPE,
+		)
+
+		with pytest.raises(RuntimeError, match='code 7.*browser failed'):
+			await LocalBrowserWatchdog._wait_for_cdp_url(1, browser_process, timeout=2)
+
+	async def test_cdp_wait_keeps_sandbox_hint_when_stderr_is_long(self):
+		"""Diagnostic truncation must retain an actionable sandbox failure and stderr tail."""
+		from browser_use.browser.watchdogs.local_browser_watchdog import LocalBrowserWatchdog
+
+		browser_process = await asyncio.create_subprocess_exec(
+			sys.executable,
+			'-c',
+			'import sys; sys.stderr.write("No usable sandbox!\\n" + "x" * 3000 + "tail-marker"); raise SystemExit(7)',
+			stdout=asyncio.subprocess.PIPE,
+			stderr=asyncio.subprocess.PIPE,
+		)
+
+		with pytest.raises(RuntimeError) as exc_info:
+			await LocalBrowserWatchdog._wait_for_cdp_url(1, browser_process, timeout=2)
+
+		error_message = str(exc_info.value)
+		assert 'chromium_sandbox=False' in error_message
+		assert 'No usable sandbox' in error_message
+		assert 'tail-marker' in error_message
+		assert len(error_message) < 2300
+
+	async def test_launch_failure_terminates_and_reaps_spawned_browser(self, monkeypatch, tmp_path):
+		"""A CDP startup failure must not leave the newly spawned browser running."""
+		from browser_use.browser.watchdogs.local_browser_watchdog import LocalBrowserWatchdog
+
+		session = BrowserSession(
+			browser_profile=BrowserProfile(
+				headless=True,
+				user_data_dir=str(tmp_path / 'profile'),
+				executable_path=sys.executable,
+			)
+		)
+		watchdog = LocalBrowserWatchdog(event_bus=session.event_bus, browser_session=session)
+		spawned_processes: list[asyncio.subprocess.Process] = []
+		create_subprocess_exec = asyncio.create_subprocess_exec
+
+		async def spawn_sleeping_process(*args, **kwargs):
+			process = await create_subprocess_exec(
+				sys.executable,
+				'-c',
+				'import time; time.sleep(30)',
+				stdout=asyncio.subprocess.PIPE,
+				stderr=asyncio.subprocess.PIPE,
+			)
+			spawned_processes.append(process)
+			return process
+
+		async def fail_cdp_wait(port, browser_process, timeout=20):
+			raise TimeoutError('simulated CDP startup timeout')
+
+		monkeypatch.setattr(asyncio, 'create_subprocess_exec', spawn_sleeping_process)
+		monkeypatch.setattr(LocalBrowserWatchdog, '_wait_for_cdp_url', staticmethod(fail_cdp_wait))
+
+		with pytest.raises(TimeoutError, match='simulated CDP startup timeout'):
+			await watchdog._launch_browser(max_retries=1)
+
+		assert len(spawned_processes) == 1
+		assert spawned_processes[0].returncode is not None
 
 	# @pytest.mark.skip(reason="Race condition - DOMWatchdog tries to inject scripts into tab that's being closed")
 	# async def test_page_lifecycle_management(self, browser_session: BrowserSession):

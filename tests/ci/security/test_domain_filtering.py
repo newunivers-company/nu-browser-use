@@ -250,9 +250,34 @@ class TestUrlAllowlistSecurity:
 		assert watchdog._is_url_allowed('https://example.com/path') is True
 		assert watchdog._is_url_allowed('http://test.org/page') is True
 
+		# A full URL allowlist entry must be scoped to the parsed origin, not a
+		# string prefix that attacker-controlled hosts can reuse.
+		assert watchdog._is_url_allowed('https://example.com.evil.test/path') is False
+		assert watchdog._is_url_allowed('https://example.com@evil.test/path') is False
+		assert watchdog._is_url_allowed('https://example.com:password@evil.test/path') is False
+
 		# www should NOT be automatically added for full URL patterns
 		assert watchdog._is_url_allowed('https://www.example.com') is False
 		assert watchdog._is_url_allowed('http://www.test.org') is False
+
+	def test_full_url_patterns_preserve_port_and_path_boundaries(self):
+		"""Full URL patterns with ports or paths remain origin- and subtree-scoped."""
+		from bubus import EventBus
+
+		from browser_use.browser.watchdogs.security_watchdog import SecurityWatchdog
+
+		browser_profile = BrowserProfile(allowed_domains=['https://example.com:8443/private'], headless=True, user_data_dir=None)
+		browser_session = BrowserSession(browser_profile=browser_profile)
+		watchdog = SecurityWatchdog(browser_session=browser_session, event_bus=EventBus())
+
+		assert watchdog._is_url_allowed('https://example.com:8443/private') is True
+		assert watchdog._is_url_allowed('https://example.com:8443/private/report') is True
+		assert watchdog._is_url_allowed('https://example.com/private') is False
+		assert watchdog._is_url_allowed('https://example.com:8443/private-report') is False
+		assert watchdog._is_url_allowed('https://example.com.evil.test:8443/private') is False
+		assert watchdog._is_url_match('https://example.com:443/app', 'example.com', 'https', 'https://example.com/app')
+		assert watchdog._is_url_match('https://example.com/app', 'example.com', 'https', 'https://example.com:443/app')
+		assert not watchdog._is_url_match('https://example.com:8443/app', 'example.com', 'https', 'https://example.com/app')
 
 	def test_is_root_domain_helper(self):
 		"""Test the _is_root_domain helper method logic."""

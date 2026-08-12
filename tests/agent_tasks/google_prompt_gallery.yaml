@@ -1,0 +1,26 @@
+name: Extract the first Gemini Prompt Gallery entries
+source_id: google_prompt_gallery
+task: Visit https://ai.google.dev/gemini-api/prompts and return the names and one-line descriptions of the first three prompt examples shown in the Prompt Gallery.
+judge_context:
+  - The output must use the official Google Gemini API Prompt Gallery.
+  - The output must contain the first three gallery entry names and the description paired with each one.
+max_steps: 10
+keyless:
+  start_url: https://ai.google.dev/gemini-api/prompts
+  expected_domains: [ai.google.dev]
+  fields:
+    - name: page_heading
+      selectors: ['main h1', 'h1']
+  collections:
+    - name: gallery_entries
+      root_selectors: ['main a.gemini-layout-small-card', 'main .glue-card', 'main a[href*="/prompts/"]']
+      min_items: 3
+      limit: 3
+      fields:
+        - name: name
+          selectors: ['h3', 'h2', 'h4']
+        - name: description
+          selectors: ['p']
+          required: false
+  required_text_patterns: ['Prompt Gallery']
+  min_selector_count: 1

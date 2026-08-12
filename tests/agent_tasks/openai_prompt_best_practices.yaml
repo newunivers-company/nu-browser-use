@@ -1,0 +1,26 @@
+name: Extract the first OpenAI prompt engineering rules
+source_id: openai_prompt_engineering
+task: Visit https://help.openai.com/en/articles/6654000-how-can-i-write-better-prompts-for-generative-models and return the exact numbered titles of rules 1 and 2.
+judge_context:
+  - The output must use the official OpenAI Help Center prompt engineering article.
+  - The output must contain the exact titles of numbered rules 1 and 2.
+max_steps: 10
+keyless:
+  start_url: https://help.openai.com/en/articles/6654000-how-can-i-write-better-prompts-for-generative-models
+  expected_domains: [help.openai.com]
+  fields:
+    - name: rule_1
+      selectors: ['main', 'article', 'body']
+      pattern: 'Write clear instructions'
+    - name: rule_2
+      selectors: ['main', 'article', 'body']
+      pattern: 'Provide reference text'
+  required_text_patterns: ['Write clear instructions', 'Provide reference text']
+  min_selector_count: 1
+  blocked_snapshot:
+    reviewed_at: 2026-08-12
+    source_url: https://help.openai.com/en/articles/6654000-how-can-i-write-better-prompts-for-generative-models
+    output:
+      rule_1: Write clear instructions
+      rule_2: Provide reference text
+    sha256: e8b36f31383a6d56bbd8f3d248e7d7d051d8e244d2d296713051ba1430ec64b0

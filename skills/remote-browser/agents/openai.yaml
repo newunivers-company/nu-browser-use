@@ -1,0 +1,4 @@
+interface:
+  display_name: "Remote Browser"
+  short_description: "Controls a local browser from a sandboxed remote machine"
+  default_prompt: "Use $remote-browser to Controls a local browser from a sandboxed remote machine."

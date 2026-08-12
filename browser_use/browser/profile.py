@@ -1,6 +1,7 @@
 import os
 import sys
 import tempfile
+import threading
 from collections.abc import Iterable
 from enum import Enum
 from fnmatch import fnmatch
@@ -9,11 +10,14 @@ from pathlib import Path
 from typing import Annotated, Any, Literal, Self
 from urllib.parse import urlparse
 
-from pydantic import AfterValidator, AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AfterValidator, AliasChoices, BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
 
 from browser_use.browser.cloud.views import CloudBrowserParams
+from browser_use.browser.extensions import DEFAULT_EXTENSION_SPECS, DefaultExtensionSpec, ExtensionArtifactLock
 from browser_use.config import CONFIG
 from browser_use.utils import _log_pretty_path, logger
+
+_DEFAULT_EXTENSIONS_PREPARATION_LOCK = threading.Lock()
 
 
 def _get_enable_default_extensions_default() -> bool:
@@ -176,6 +180,8 @@ CHROME_DEFAULT_ARGS = [
 	# '--force-color-profile=srgb',  # moved to CHROME_DETERMINISTIC_RENDERING_ARGS
 	'--metrics-recording-only',
 	'--no-first-run',
+	'--password-store=basic',  # Avoid blocking on unavailable desktop keyrings in headless automation.
+	'--use-mock-keychain',  # Prevent OS keychain prompts while launching unattended browsers.
 	# // See https://chromium-review.googlesource.com/c/chromium/src/+/2436773
 	'--no-service-autorun',
 	'--export-tagged-pdf',
@@ -590,6 +596,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		validate_by_name=True,
 		validate_by_alias=True,
 	)
+	_prepared_extension_paths: list[str] | None = PrivateAttr(default=None)
 
 	# ... extends options defined in:
 	# BrowserLaunchPersistentContextArgs, BrowserLaunchArgs, BrowserNewContextArgs, BrowserConnectArgs
@@ -974,7 +981,13 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 
 	def _get_extension_args(self) -> list[str]:
 		"""Get Chrome args for enabling default extensions (ad blocker and cookie handler)."""
-		extension_paths = self._ensure_default_extensions_downloaded()
+		extension_paths = self._prepared_extension_paths
+		if extension_paths is None:
+			logger.warning(
+				'[BrowserProfile] Default extensions were not prepared before launch; '
+				'launching without extensions to avoid network work inside BrowserLaunchEvent.'
+			)
+			extension_paths = []
 
 		args = [
 			'--enable-extensions',
@@ -987,6 +1000,15 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 			args.append(f'--load-extension={",".join(extension_paths)}')
 
 		return args
+
+	def prepare_default_extensions(self) -> list[str]:
+		"""Download and verify default extensions before browser launch begins."""
+		if not self.enable_default_extensions:
+			self._prepared_extension_paths = []
+			return []
+		if self._prepared_extension_paths is None:
+			self._prepared_extension_paths = self._ensure_default_extensions_downloaded()
+		return list(self._prepared_extension_paths)
 
 	@staticmethod
 	def _check_extension_manifest_version(ext_dir: Path, ext_name: str) -> bool:
@@ -1008,46 +1030,15 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 			return False
 
 	def _ensure_default_extensions_downloaded(self) -> list[str]:
+		"""Serialize mutations of the process-wide default extension cache."""
+		with _DEFAULT_EXTENSIONS_PREPARATION_LOCK:
+			return self._ensure_default_extensions_downloaded_locked()
+
+	def _ensure_default_extensions_downloaded_locked(self) -> list[str]:
 		"""
 		Ensure default extensions are downloaded and cached locally.
 		Returns list of paths to extension directories.
 		"""
-
-		# Extension definitions - optimized for automation and content extraction
-		# uBlock Origin Lite (ad blocking, MV3) + "I still don't care about cookies" (cookie banner handling)
-		extensions = [
-			{
-				'name': 'uBlock Origin Lite',
-				'id': 'ddkjiahejlhfcafbddmgiahcphecmpfh',
-				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=133&acceptformat=crx3&x=id%3Dddkjiahejlhfcafbddmgiahcphecmpfh%26uc',
-			},
-			{
-				'name': "I still don't care about cookies",
-				'id': 'edibdbjcniadpccecjdfdjjppcpchdlm',
-				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=133&acceptformat=crx3&x=id%3Dedibdbjcniadpccecjdfdjjppcpchdlm%26uc',
-			},
-			{
-				'name': 'Force Background Tab',
-				'id': 'gidlfommnbibbmegmgajdbikelkdcmcl',
-				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=133&acceptformat=crx3&x=id%3Dgidlfommnbibbmegmgajdbikelkdcmcl%26uc',
-			},
-			# {
-			# 	'name': 'Captcha Solver: Auto captcha solving service',
-			# 	'id': 'pgojnojmmhpofjgdmaebadhbocahppod',
-			# 	'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dpgojnojmmhpofjgdmaebadhbocahppod%26uc',
-			# },
-			# Consent-O-Matic disabled - using uBlock Origin's cookie lists instead for simplicity
-			# {
-			# 	'name': 'Consent-O-Matic',
-			# 	'id': 'mdjildafknihdffpkfmmpnpoiajfjnjd',
-			# 	'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dmdjildafknihdffpkfmmpnpoiajfjnjd%26uc',
-			# },
-			# {
-			# 	'name': 'Privacy | Protect Your Payments',
-			# 	'id': 'hmgpakheknboplhmlicfkkgjipfabmhp',
-			# 	'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dhmgpakheknboplhmlicfkkgjipfabmhp%26uc',
-			# },
-		]
 
 		# Create extensions cache directory
 		cache_dir = CONFIG.BROWSER_USE_EXTENSIONS_DIR
@@ -1057,38 +1048,39 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		extension_paths = []
 		loaded_extension_names = []
 
-		for ext in extensions:
-			ext_dir = cache_dir / ext['id']
-			crx_file = cache_dir / f'{ext["id"]}.crx'
+		for extension in DEFAULT_EXTENSION_SPECS:
+			ext_dir = cache_dir / extension.extension_id
+			crx_file = cache_dir / f'{extension.extension_id}.crx'
+			lock_file = cache_dir / f'{extension.extension_id}.lock.json'
 
-			# Check if extension is already extracted
-			if ext_dir.exists() and (ext_dir / 'manifest.json').exists():
-				if not self._check_extension_manifest_version(ext_dir, ext['name']):
-					continue
+			if self._extension_artifact_is_valid(extension, crx_file, ext_dir):
+				self._write_extension_lock(extension, lock_file)
 				extension_paths.append(str(ext_dir))
-				loaded_extension_names.append(ext['name'])
+				loaded_extension_names.append(extension.name)
 				continue
 
 			try:
-				# Download extension if not cached
-				if not crx_file.exists():
-					logger.info(f'📦 Downloading {ext["name"]} extension...')
-					self._download_extension(ext['url'], crx_file)
-				else:
-					logger.debug(f'📦 Found cached {ext["name"]} .crx file')
+				download_path = crx_file.with_suffix('.crx.download')
+				logger.info(f'📦 Downloading pinned {extension.name} {extension.version} extension...')
+				self._download_extension(extension, download_path)
+				if self._sha256_file(download_path) != extension.sha256:
+					download_path.unlink(missing_ok=True)
+					raise ValueError(f'Downloaded artifact checksum does not match the pin for {extension.name}')
+				download_path.replace(crx_file)
 
 				# Extract extension
-				logger.info(f'📂 Extracting {ext["name"]} extension...')
+				logger.info(f'📂 Extracting {extension.name} extension...')
 				self._extract_extension(crx_file, ext_dir)
 
-				if not self._check_extension_manifest_version(ext_dir, ext['name']):
-					continue
+				if not self._extension_artifact_is_valid(extension, crx_file, ext_dir):
+					raise ValueError(f'Extracted extension does not match the pin for {extension.name}')
+				self._write_extension_lock(extension, lock_file)
 
 				extension_paths.append(str(ext_dir))
-				loaded_extension_names.append(ext['name'])
+				loaded_extension_names.append(extension.name)
 
 			except Exception as e:
-				logger.warning(f'⚠️ Failed to setup {ext["name"]} extension: {e}')
+				logger.warning(f'⚠️ Failed to setup {extension.name} extension: {e}')
 				continue
 
 		# Apply minimal patch to cookie extension with configurable whitelist
@@ -1102,6 +1094,62 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 			logger.warning('[BrowserProfile] ⚠️ No default extensions could be loaded')
 
 		return extension_paths
+
+	@staticmethod
+	def _sha256_file(path: Path) -> str:
+		"""Return the SHA-256 digest for a cached extension artifact."""
+		import hashlib
+
+		digest = hashlib.sha256()
+		with path.open('rb') as artifact:
+			for chunk in iter(lambda: artifact.read(1024 * 1024), b''):
+				digest.update(chunk)
+		return digest.hexdigest()
+
+	def _extension_artifact_is_valid(self, extension: DefaultExtensionSpec, crx_file: Path, ext_dir: Path) -> bool:
+		"""Verify cached CRX hash, extracted version, and Manifest V3 compatibility."""
+		import json
+
+		manifest_path = ext_dir / 'manifest.json'
+		if not crx_file.is_file() or not manifest_path.is_file():
+			return False
+		if self._sha256_file(crx_file) != extension.sha256:
+			return False
+		if not self._check_extension_manifest_version(ext_dir, extension.name):
+			return False
+		try:
+			manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+		except (OSError, json.JSONDecodeError):
+			return False
+		return manifest.get('version') == extension.version
+
+	@staticmethod
+	def _write_extension_lock(extension: DefaultExtensionSpec, lock_file: Path) -> None:
+		"""Atomically persist verified extension identity across concurrent launches."""
+		lock = ExtensionArtifactLock(
+			extension_id=extension.extension_id,
+			version=extension.version,
+			sha256=extension.sha256,
+			source_url=extension.url,
+		)
+		temporary_lock: Path | None = None
+		try:
+			with tempfile.NamedTemporaryFile(
+				mode='w',
+				encoding='utf-8',
+				dir=lock_file.parent,
+				prefix=f'.{lock_file.name}.',
+				suffix='.tmp',
+				delete=False,
+			) as temporary_file:
+				temporary_file.write(lock.model_dump_json(indent=2) + '\n')
+				temporary_file.flush()
+				os.fsync(temporary_file.fileno())
+				temporary_lock = Path(temporary_file.name)
+			temporary_lock.replace(lock_file)
+		finally:
+			if temporary_lock is not None:
+				temporary_lock.unlink(missing_ok=True)
 
 	def _apply_minimal_extension_patch(self, ext_dir: Path, whitelist_domains: list[str]) -> None:
 		"""Minimal patch: pre-populate chrome.storage.local with configurable domain whitelist."""
@@ -1167,12 +1215,15 @@ async function initialize(checkInitialized, magic) {{
 		except Exception as e:
 			logger.debug(f'[BrowserProfile] Could not patch extension storage: {e}')
 
-	def _download_extension(self, url: str, output_path: Path) -> None:
-		"""Download extension .crx file."""
+	def _download_extension(self, extension: DefaultExtensionSpec, output_path: Path) -> None:
+		"""Download a pinned extension only from its approved HTTPS hosts."""
 		import urllib.request
 
 		try:
-			with urllib.request.urlopen(url) as response:
+			with urllib.request.urlopen(extension.url, timeout=60) as response:
+				final_url = urlparse(response.geturl())
+				if final_url.scheme != 'https' or final_url.hostname not in extension.allowed_download_hosts:
+					raise ValueError(f'Unapproved extension download origin: {response.geturl()}')
 				with open(output_path, 'wb') as f:
 					f.write(response.read())
 		except Exception as e:
@@ -1194,7 +1245,7 @@ async function initialize(checkInitialized, magic) {{
 		try:
 			# CRX files are ZIP files with a header, try to extract as ZIP
 			with zipfile.ZipFile(crx_path, 'r') as zip_ref:
-				zip_ref.extractall(extract_dir)
+				self._safe_extract_extension_zip(zip_ref, extract_dir)
 
 			# Verify manifest exists
 			if not (extract_dir / 'manifest.json').exists():
@@ -1228,9 +1279,19 @@ async function initialize(checkInitialized, magic) {{
 				temp_zip.flush()
 
 				with zipfile.ZipFile(temp_zip.name, 'r') as zip_ref:
-					zip_ref.extractall(extract_dir)
+					self._safe_extract_extension_zip(zip_ref, extract_dir)
 
 				os.unlink(temp_zip.name)
+
+	@staticmethod
+	def _safe_extract_extension_zip(zip_file, extract_dir: Path) -> None:
+		"""Extract an extension archive while rejecting paths outside the cache directory."""
+		extraction_root = extract_dir.resolve()
+		for member in zip_file.infolist():
+			member_path = (extract_dir / member.filename).resolve()
+			if not member_path.is_relative_to(extraction_root):
+				raise ValueError(f'Extension archive contains an unsafe path: {member.filename}')
+		zip_file.extractall(extract_dir)
 
 	def detect_display_configuration(self) -> None:
 		"""

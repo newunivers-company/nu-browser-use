@@ -2,12 +2,13 @@ import pytest
 from pydantic import BaseModel, Field
 
 from browser_use.agent.message_manager.service import MessageManager
-from browser_use.agent.views import ActionResult, AgentOutput, AgentStepInfo, MessageManagerState
-from browser_use.browser.views import BrowserStateSummary
+from browser_use.agent.views import ActionResult, AgentHistory, AgentHistoryList, AgentOutput, AgentStepInfo, MessageManagerState
+from browser_use.browser.views import BrowserStateHistory, BrowserStateSummary
 from browser_use.dom.views import SerializedDOMState
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.llm import SystemMessage, UserMessage
 from browser_use.llm.messages import ContentPartTextParam
+from browser_use.tokens.views import UsageSummary
 from browser_use.tools.registry.service import Registry
 from browser_use.utils import is_new_tab_page, match_url_with_domain_pattern
 
@@ -436,6 +437,56 @@ def test_sensitive_data_filtered_with_domain_specific_format():
 	# API key should be filtered out
 	assert 'sk-secret-api-key-12345' not in combined_text, 'API key leaked into LLM messages!'
 	assert '<secret>api_key</secret>' in combined_text, 'API key placeholder not found in messages'
+
+
+def test_saved_history_redacts_all_fields_and_preserves_usage(tmp_path):
+	"""Persisted histories redact secrets everywhere and round-trip usage metadata."""
+	secret = 'history-secret-value'
+	model_output = AgentOutput(
+		evaluation_previous_goal=f'Used {secret}',
+		memory=f'Remember {secret}',
+		next_goal='Finish safely',
+		action=[],
+	)
+	usage = UsageSummary(
+		total_prompt_tokens=10,
+		total_prompt_cost=0.01,
+		total_prompt_cached_tokens=2,
+		total_prompt_cached_cost=0.001,
+		total_completion_tokens=5,
+		total_completion_cost=0.02,
+		total_tokens=15,
+		total_cost=0.03,
+		entry_count=1,
+	)
+	history = AgentHistoryList(
+		history=[
+			AgentHistory(
+				model_output=model_output,
+				result=[ActionResult(extracted_content=f'Result contained {secret}')],
+				state=BrowserStateHistory(
+					url=f'https://example.com/?token={secret}',
+					title=f'Page {secret}',
+					tabs=[],
+					interacted_element=[],
+				),
+				state_message=f'State contained {secret}',
+			)
+		],
+		usage=usage,
+	)
+
+	history_file = tmp_path / 'history.json'
+	history.save_to_file(history_file, sensitive_data={'password': secret})
+	serialized = history_file.read_text(encoding='utf-8')
+
+	assert secret not in serialized
+	assert '<secret>password</secret>' in serialized
+
+	restored = AgentHistoryList.load_from_file(history_file, AgentOutput)
+	assert restored.usage is not None
+	assert restored.usage.total_tokens == 15
+	assert restored.usage.total_cost == 0.03
 
 
 # ─── Tests for password field value redaction in DOM snapshots ────────────────

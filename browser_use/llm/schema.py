@@ -98,7 +98,10 @@ class SchemaOptimizer:
 						'pattern',
 						'default',
 					]:
-						optimized[key] = value if not isinstance(value, (dict, list)) else optimize_schema(value, defs_lookup)
+						canonical_key = 'minItems' if key == 'min_items' else key
+						optimized[canonical_key] = (
+							value if not isinstance(value, (dict, list)) else optimize_schema(value, defs_lookup)
+						)
 
 					# Recursively process all other fields
 					else:

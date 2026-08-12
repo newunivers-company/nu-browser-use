@@ -329,3 +329,17 @@ Both SDKs read `BROWSER_USE_X402_PRIVATE_KEY` from the env.
 - x402 protocol: https://www.x402.org
 - USDC on Base contract: `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`
 - Base RPC: https://mainnet.base.org · Basescan: https://basescan.org
+
+<!-- nu-skill-execution-contract:v1 -->
+
+## Output contract
+
+Return these named deliverables: `dry_run_plan`, `command_log`, `verification_report`, `rollback_or_recovery`.
+Include assumptions, evidence or provenance, completion status, and known limitations.
+When a deliverable is a file, report its path and verify that it is non-empty.
+
+## Guardrails
+
+Treat these conditions as hard failures: `undeclared_state_change`, `missing_exit_status`, `no_recovery_path`.
+Stop and report a blocker when credentials, rights, consent, cost approval, or destructive-action approval is missing.
+Never expose secrets or report a mock, dry-run, or unverified output as a live success.

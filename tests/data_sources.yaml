@@ -1,0 +1,434 @@
+version: 1
+last_reviewed: 2026-08-12
+sources:
+  - id: amazon
+    name: Amazon Search
+    category: commerce
+    url: https://www.amazon.com/s?k=laptop
+    access: anti_bot_protected
+    test_level: behavioral
+    expected_http_statuses: [200, 403, 503]
+    description: Product search workflow with common commerce anti-bot behavior.
+
+  - id: browser_use_github
+    name: Browser Use GitHub Repository
+    category: documentation
+    url: https://github.com/browser-use/browser-use
+    access: public_static
+    test_level: behavioral
+    expected_http_statuses: [200]
+    description: Project installation and repository documentation.
+
+  - id: python_downloads
+    name: Python Downloads
+    category: documentation
+    url: https://www.python.org/downloads/
+    access: public_static
+    test_level: behavioral
+    expected_http_statuses: [200]
+    description: Official release information extraction source.
+
+  - id: quotes_to_scrape
+    name: Quotes to Scrape
+    category: test_site
+    url: https://quotes.toscrape.com/
+    access: public_static
+    test_level: behavioral
+    expected_http_statuses: [200]
+    description: Stable public fixture for structured text extraction.
+
+  - id: hacker_news
+    name: Hacker News
+    category: social_media
+    url: https://news.ycombinator.com/
+    access: public_static
+    test_level: behavioral
+    expected_http_statuses: [200]
+    description: Ranked social-news link extraction.
+
+  - id: github_trending
+    name: GitHub Trending
+    category: social_media
+    url: https://github.com/trending
+    access: public_static
+    test_level: behavioral
+    expected_http_statuses: [200]
+    description: Daily ranked repository discovery page.
+
+  - id: reddit_popular
+    name: Reddit Popular
+    category: social_media
+    url: https://www.reddit.com/r/popular/
+    access: anti_bot_protected
+    test_level: availability
+    expected_http_statuses: [200, 403, 429]
+    description: Popular community posts with region and anti-bot variability.
+
+  - id: dev_community
+    name: DEV Community Top Posts
+    category: social_media
+    url: https://dev.to/top/week
+    access: public_static
+    test_level: behavioral
+    expected_http_statuses: [200]
+    description: Weekly ranked developer-community articles.
+
+  - id: lobsters
+    name: Lobsters
+    category: social_media
+    url: https://lobste.rs/
+    access: public_static
+    test_level: behavioral
+    expected_http_statuses: [200]
+    description: Ranked technology discussion links.
+
+  - id: lemmy_world
+    name: Lemmy World
+    category: social_media
+    url: https://lemmy.world/
+    access: anti_bot_protected
+    test_level: availability
+    expected_http_statuses: [200, 403, 429]
+    description: Federated social-news instance with CDN bot filtering.
+
+  - id: mastodon_explore
+    name: Mastodon Social Explore
+    category: social_media
+    url: https://mastodon.social/explore
+    access: public_javascript
+    test_level: behavioral
+    expected_http_statuses: [200]
+    description: Public federated timeline and trending content.
+
+  - id: bluesky_discover
+    name: Bluesky
+    category: social_media
+    url: https://bsky.app/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: JavaScript-rendered decentralized social application.
+
+  - id: youtube_trending
+    name: YouTube Trending
+    category: social_media
+    url: https://www.youtube.com/feed/trending
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200, 429]
+    description: Region-sensitive trending video feed.
+
+  - id: medium_ai
+    name: Medium Artificial Intelligence Tag
+    category: social_media
+    url: https://medium.com/tag/artificial-intelligence
+    access: anti_bot_protected
+    test_level: availability
+    expected_http_statuses: [200, 403, 429]
+    description: Topic-ranked social publishing feed with CDN protection.
+
+  - id: product_hunt
+    name: Product Hunt
+    category: social_media
+    url: https://www.producthunt.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200, 403]
+    description: Community-ranked product launches.
+
+  - id: stack_overflow_hot
+    name: Stack Overflow Hot Questions
+    category: social_media
+    url: https://stackoverflow.com/questions?tab=Hot
+    access: anti_bot_protected
+    test_level: availability
+    expected_http_statuses: [200, 403, 429]
+    description: Ranked technical question feed with bot protection.
+
+  - id: x_explore
+    name: X Explore
+    category: social_media
+    url: https://x.com/explore
+    access: login_required
+    test_level: availability
+    expected_http_statuses: [200]
+    description: Login-gated social trend discovery surface.
+
+  - id: instagram_explore
+    name: Instagram Explore
+    category: social_media
+    url: https://www.instagram.com/explore/
+    access: login_required
+    test_level: availability
+    expected_http_statuses: [200, 429]
+    description: Login-sensitive visual discovery feed.
+
+  - id: threads
+    name: Threads
+    category: social_media
+    url: https://www.threads.com/
+    access: login_required
+    test_level: availability
+    expected_http_statuses: [200, 429]
+    description: JavaScript social feed with login-dependent content.
+
+  - id: facebook
+    name: Facebook
+    category: social_media
+    url: https://www.facebook.com/
+    access: login_required
+    test_level: availability
+    expected_http_statuses: [200, 429]
+    description: Login-gated general social network.
+
+  - id: tiktok_explore
+    name: TikTok Explore
+    category: social_media
+    url: https://www.tiktok.com/explore
+    access: anti_bot_protected
+    test_level: availability
+    expected_http_statuses: [200, 403, 429]
+    description: JavaScript video discovery page with bot controls.
+
+  - id: pinterest_explore
+    name: Pinterest Ideas
+    category: social_media
+    url: https://www.pinterest.com/ideas/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200, 429]
+    description: Visual idea and trend discovery feed.
+
+  - id: discord_discovery
+    name: Discord Server Discovery
+    category: social_media
+    url: https://discord.com/servers
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200, 403]
+    description: Public community-server discovery surface.
+
+  - id: linkedin_feed
+    name: LinkedIn Feed
+    category: social_media
+    url: https://www.linkedin.com/feed/
+    access: login_required
+    test_level: availability
+    expected_http_statuses: [200, 403, 429]
+    description: Professional social feed that redirects anonymous visitors to login.
+
+  - id: snapchat_web
+    name: Snapchat for Web
+    category: social_media
+    url: https://www.snapchat.com/web/
+    access: login_required
+    test_level: availability
+    expected_http_statuses: [200, 403, 429]
+    description: Web client for Snapchat messaging and public surfaces.
+
+  - id: twitch_directory
+    name: Twitch Browse Directory
+    category: social_media
+    url: https://www.twitch.tv/directory
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200, 403, 429]
+    description: Live-stream category and channel discovery directory.
+
+  - id: tumblr_trending
+    name: Tumblr Trending
+    category: social_media
+    url: https://www.tumblr.com/explore/trending
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200, 403, 429]
+    description: Trending tags and posts on the Tumblr social platform.
+
+  - id: quora
+    name: Quora
+    category: social_media
+    url: https://www.quora.com/
+    access: anti_bot_protected
+    test_level: availability
+    expected_http_statuses: [200, 403, 429]
+    description: Community question-and-answer network with bot protection.
+
+  - id: anthropic_prompting
+    name: Anthropic Prompt Engineering
+    category: prompt_library
+    url: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/overview
+    access: public_static
+    test_level: behavioral
+    expected_http_statuses: [200]
+    description: Official Claude prompt-engineering overview and technique links.
+
+  - id: google_prompt_gallery
+    name: Google Gemini Prompt Gallery
+    category: prompt_library
+    url: https://ai.google.dev/gemini-api/prompts
+    access: public_static
+    test_level: behavioral
+    expected_http_statuses: [200]
+    description: Official Gemini prompt examples linked to AI Studio.
+
+  - id: google_prompt_strategies
+    name: Google Gemini Prompt Strategies
+    category: prompt_library
+    url: https://ai.google.dev/gemini-api/docs/prompting-strategies
+    access: public_static
+    test_level: behavioral
+    expected_http_statuses: [200]
+    description: Official Gemini prompt-design strategy documentation.
+
+  - id: openai_prompt_engineering
+    name: OpenAI Prompt Engineering Best Practices
+    category: prompt_library
+    url: https://help.openai.com/en/articles/6654000-how-can-i-write-better-prompts-for-generative-models
+    access: anti_bot_protected
+    test_level: behavioral
+    expected_http_statuses: [200, 403, 429]
+    description: Official OpenAI prompt-engineering guidance with observed anti-bot response variability.
+
+  - id: prompts_chat
+    name: prompts.chat Community
+    category: prompt_library
+    url: https://prompts.chat/
+    access: public_javascript
+    test_level: behavioral
+    expected_http_statuses: [200]
+    description: Community prompt browsing and search application.
+
+  - id: prompts_chat_github
+    name: prompts.chat GitHub Repository
+    category: prompt_library
+    url: https://github.com/f/prompts.chat
+    access: public_static
+    test_level: behavioral
+    expected_http_statuses: [200]
+    description: Open-source prompt collection backing prompts.chat.
+
+  - id: flowgpt
+    name: FlowGPT
+    category: prompt_library
+    url: https://flowgpt.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200, 403, 429]
+    description: Community prompt and AI-character discovery application.
+
+  - id: prompthero
+    name: PromptHero
+    category: prompt_library
+    url: https://prompthero.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200, 403, 429]
+    description: Searchable text and image-generation prompt library.
+
+  - id: promptbase
+    name: PromptBase
+    category: prompt_library
+    url: https://promptbase.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200, 403, 429]
+    description: Prompt marketplace and discovery site.
+
+  - id: learn_prompting
+    name: Learn Prompting
+    category: prompt_library
+    url: https://learnprompting.org/docs/introduction
+    access: public_static
+    test_level: behavioral
+    expected_http_statuses: [200]
+    description: Open prompt-engineering curriculum and examples.
+
+  - id: lexica
+    name: Lexica
+    category: prompt_library
+    url: https://lexica.art/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200, 403, 429]
+    description: Image and prompt discovery search application.
+
+  - id: civitai_images
+    name: Civitai Images
+    category: prompt_library
+    url: https://civitai.com/images
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200, 403, 429]
+    description: Community image-generation metadata and prompt feed.
+
+  - id: openart
+    name: OpenArt Discovery
+    category: prompt_library
+    url: https://openart.ai/discovery
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200, 403, 429]
+    description: Image and prompt discovery gallery.
+
+  - id: huggingface_prompts
+    name: Hugging Face prompts.chat Dataset
+    category: prompt_library
+    url: https://huggingface.co/datasets/fka/prompts.chat
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200, 429]
+    description: Public structured prompt dataset hosted on Hugging Face.
+
+  - id: langsmith_hub
+    name: LangSmith Prompt Hub
+    category: prompt_library
+    url: https://smith.langchain.com/hub
+    access: login_required
+    test_level: availability
+    expected_http_statuses: [200, 403]
+    description: Prompt repository with authentication-dependent actions.
+
+  - id: aiprm_prompts
+    name: AIPRM Prompts
+    category: prompt_library
+    url: https://app.aiprm.com/prompts
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200, 403, 429]
+    description: Community prompt browsing application.
+
+  - id: snack_prompt
+    name: Snack Prompt
+    category: prompt_library
+    url: https://snackprompt.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200, 403, 429]
+    description: Community prompt discovery and curation site.
+
+  - id: prompting_guide_basics
+    name: Prompt Engineering Guide Basics
+    category: prompt_library
+    url: https://www.promptingguide.ai/introduction/basics
+    access: public_static
+    test_level: behavioral
+    expected_http_statuses: [200]
+    description: DAIR.AI prompt fundamentals, formats, and worked examples.
+
+  - id: microsoft_copilot_prompts
+    name: Microsoft 365 Copilot Prompts Gallery
+    category: prompt_library
+    url: https://m365.cloud.microsoft/copilot-prompts
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200, 403, 429]
+    description: Official Microsoft-authored Copilot prompt discovery gallery.
+
+  - id: midjourney_prompt_basics
+    name: Midjourney Prompt Basics
+    category: prompt_library
+    url: https://docs.midjourney.com/docs/prompts
+    access: anti_bot_protected
+    test_level: availability
+    expected_http_statuses: [200, 403, 429]
+    description: Official Midjourney image-prompt fundamentals and tips.

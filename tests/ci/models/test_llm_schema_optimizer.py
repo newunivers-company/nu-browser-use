@@ -74,3 +74,15 @@ def test_gemini_schema_retains_required_fields():
 
 	required_fields = set(schema['required'])
 	assert {'price', 'title'}.issubset(required_fields), 'Mandatory fields must stay required for Gemini.'
+
+
+def test_optimizer_normalizes_internal_min_items_keyword():
+	"""Subscription CLIs must receive the standard JSON Schema minItems keyword."""
+	action_model = Tools().registry.create_action_model()
+	agent_output_model = AgentOutput.type_with_custom_actions(action_model)
+
+	schema = SchemaOptimizer.create_optimized_json_schema(agent_output_model)
+	action_schema = schema['properties']['action']
+
+	assert action_schema['minItems'] == 1
+	assert 'min_items' not in action_schema

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cloud"
+  short_description: "Documentation reference for using Browser Use Cloud — the hos..."
+  default_prompt: "Use $cloud to Documentation reference for using Browser Use Cloud — the hosted API and SDK for browser automation."

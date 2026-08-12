@@ -20,7 +20,7 @@ from collections.abc import Awaitable, Callable
 from contextlib import nullcontext, suppress
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Generic, Literal
+from typing import Any, Generic, Literal, cast
 from urllib.parse import urlparse
 
 from bubus import EventBus
@@ -39,6 +39,7 @@ from browser_use.agent.judge import construct_judge_messages
 from browser_use.agent.message_manager.service import MessageManager
 from browser_use.agent.message_manager.utils import save_conversation
 from browser_use.agent.prompts import SystemPrompt
+from browser_use.agent.runtime import resolve_agent_context, resolve_default_llm, resolve_llm_timeout
 from browser_use.agent.views import (
 	ActionResult,
 	AgentError,
@@ -109,6 +110,13 @@ def _laminar_ready() -> bool:
 		return False
 
 
+def _laminar_client() -> Any | None:
+	"""Return the optional Laminar client through a typed dynamic boundary."""
+	if not _laminar_ready():
+		return None
+	return Laminar
+
+
 def _laminar_preview(value: Any, limit: int = 2000) -> Any:
 	if value is None or isinstance(value, (bool, int, float)):
 		return value
@@ -119,51 +127,56 @@ def _laminar_preview(value: Any, limit: int = 2000) -> Any:
 
 
 def _laminar_set_span_attributes(attributes: dict[str, Any]) -> None:
-	if not _laminar_ready():
+	laminar = _laminar_client()
+	if laminar is None:
 		return
 	safe_attributes = {key: value for key, value in attributes.items() if isinstance(value, (str, bool, int, float))}
 	if not safe_attributes:
 		return
 	try:
-		Laminar.set_span_attributes(safe_attributes)
+		laminar.set_span_attributes(safe_attributes)
 	except Exception:
 		logger.debug('Failed to set Laminar span attributes', exc_info=True)
 
 
 def _laminar_set_span_output(output: Any) -> None:
-	if not _laminar_ready():
+	laminar = _laminar_client()
+	if laminar is None:
 		return
 	try:
-		Laminar.set_span_output(output)
+		laminar.set_span_output(output)
 	except Exception:
 		logger.debug('Failed to set Laminar span output', exc_info=True)
 
 
 def _laminar_event(name: str, attributes: dict[str, Any] | None = None) -> None:
-	if not _laminar_ready():
+	laminar = _laminar_client()
+	if laminar is None:
 		return
 	safe_attributes = {key: value for key, value in (attributes or {}).items() if isinstance(value, (str, bool, int, float))}
 	try:
-		Laminar.event(name, safe_attributes or None)
+		laminar.event(name, safe_attributes or None)
 	except Exception:
 		logger.debug('Failed to emit Laminar event %s', name, exc_info=True)
 
 
 def _laminar_start_span(name: str, *, input: Any = None, span_type: str = 'DEFAULT'):
-	if not _laminar_ready():
+	laminar = _laminar_client()
+	if laminar is None:
 		return nullcontext()
 	try:
-		return Laminar.start_as_current_span(name=name, input=input, span_type=span_type)
+		return laminar.start_as_current_span(name=name, input=input, span_type=span_type)
 	except Exception:
 		logger.debug('Failed to start Laminar span %s', name, exc_info=True)
 		return nullcontext()
 
 
 def _laminar_force_flush() -> None:
-	if not _laminar_ready():
+	laminar = _laminar_client()
+	if laminar is None:
 		return
 	for method_name in ('flush', 'force_flush'):
-		method = getattr(Laminar, method_name, None)
+		method = getattr(laminar, method_name, None)
 		if method is None:
 			continue
 		try:
@@ -174,10 +187,11 @@ def _laminar_force_flush() -> None:
 
 
 def _laminar_current_trace_id() -> str | None:
-	if not _laminar_ready():
+	laminar = _laminar_client()
+	if laminar is None:
 		return None
 	try:
-		trace_id = Laminar.get_trace_id()
+		trace_id = laminar.get_trace_id()
 	except Exception:
 		return None
 	return str(trace_id) if trace_id else None
@@ -686,37 +700,6 @@ def _model_name(llm: Any | None) -> str:
 		if isinstance(value, str) and value:
 			return value
 	return os.environ.get('BROWSER_USE_RUST_MODEL', 'gpt-5.3-codex-spark')
-
-
-def _llm_timeout_for_model(llm: Any | None) -> int:
-	model_name = str(getattr(llm, 'model', '') or '').lower()
-	if 'gemini' in model_name:
-		if '3-pro' in model_name:
-			return 90
-		return 75
-	if 'groq' in model_name:
-		return 30
-	if 'o3' in model_name or 'claude' in model_name or 'sonnet' in model_name or 'deepseek' in model_name:
-		return 90
-	return 75
-
-
-def _resolve_default_llm(llm: BaseChatModel | None) -> BaseChatModel:
-	if llm is not None:
-		return llm
-	try:
-		from browser_use.config import CONFIG
-
-		default_llm_name = CONFIG.DEFAULT_LLM
-	except Exception:
-		default_llm_name = ''
-	if default_llm_name:
-		from browser_use.llm.models import get_llm_by_name
-
-		return get_llm_by_name(default_llm_name)
-	from browser_use import ChatBrowserUse
-
-	return ChatBrowserUse()
 
 
 def _extract_cdp_url(browser_session: BrowserSession | None) -> str | None:
@@ -2535,7 +2518,7 @@ def _model_output_from_tool_calls(tool_calls: list[dict[str, Any]], events: list
 	action_names = list(dict.fromkeys(call['name'] for call in tool_calls if isinstance(call.get('name'), str)))
 	if not action_names:
 		return None
-	action_fields = {name: (dict[str, Any] | None, None) for name in action_names}
+	action_fields: dict[str, Any] = {name: (dict[str, Any] | None, None) for name in action_names}
 	recovered_action_model = create_model('RustTerminalActionModel', __base__=ActionModel, **action_fields)
 	recovered_output_model = AgentOutput.type_with_custom_actions(recovered_action_model)
 	actions = []
@@ -3509,9 +3492,9 @@ def _terminal_laminar_content_part_for_span(part: Any) -> Any:
 		if resolved_url:
 			return {'type': 'file', 'file_data': resolved_url}
 	if part_type in {'input_image', 'image'}:
-		image_url = part.get('image_url')
-		if isinstance(image_url, str) and image_url:
-			resolved_image: dict[str, Any] = {'url': image_url}
+		raw_image_url = part.get('image_url')
+		if isinstance(raw_image_url, str) and raw_image_url:
+			resolved_image: dict[str, Any] = {'url': raw_image_url}
 			detail = part.get('detail')
 			if isinstance(detail, str) and detail:
 				resolved_image['detail'] = detail
@@ -4300,8 +4283,21 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		max_clickable_elements_length: int = 40000,
 		_url_shortening_limit: int = 25,
 		enable_signal_handler: bool = True,
+		context: Context | None = None,
 		**kwargs,
 	):
+		self.context, legacy_arguments = resolve_agent_context(
+			context,
+			kwargs,
+			allowed_legacy_arguments=frozenset({'max_steps'}),
+		)
+		if self.context is not None:
+			raise NotImplementedError(
+				'context is not supported by browser_use.beta.Agent because its Rust-backed actions cannot inject '
+				'Python objects. Use browser_use.Agent for context-aware custom actions.'
+			)
+		default_max_steps = legacy_arguments.get('max_steps', 100)
+
 		if llm_screenshot_size is not None:
 			if not isinstance(llm_screenshot_size, tuple) or len(llm_screenshot_size) != 2:
 				raise ValueError('llm_screenshot_size must be a tuple of (width, height)')
@@ -4310,7 +4306,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				raise ValueError('llm_screenshot_size dimensions must be integers')
 			if width < 100 or height < 100:
 				raise ValueError('llm_screenshot_size dimensions must be at least 100 pixels')
-		llm = _resolve_default_llm(llm)
+		llm = resolve_default_llm(llm)
 		use_vision = True
 		if browser and browser_session:
 			raise ValueError('Cannot specify both "browser" and "browser_session" parameters. Use "browser" for the cleaner API.')
@@ -4329,7 +4325,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		if judge_llm is None:
 			judge_llm = llm
 		if llm_timeout is None:
-			llm_timeout = _llm_timeout_for_model(llm)
+			llm_timeout = resolve_llm_timeout(llm)
 		self.id = task_id or uuid7str()
 		self.task_id = self.id
 		self.llm = llm
@@ -4379,7 +4375,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.register_should_stop_callback = register_should_stop_callback
 		self.output_model_schema = output_model_schema
 		self._set_browser_use_version_and_source(source)
-		self.kwargs = kwargs
+		self.kwargs = {'max_steps': default_max_steps}
 		self.model = _model_name(llm)
 		if isinstance(message_compaction, bool):
 			message_compaction = MessageCompactionSettings(enabled=message_compaction)
@@ -5577,27 +5573,30 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self.ActionModel = None
 			self.DoneActionModel = None
 			self.AgentOutput = AgentOutput
+			self.DoneAgentOutput = AgentOutput
 			return
-		self.ActionModel = create_action_model(page_url=page_url)
+		action_model = cast(type[ActionModel], create_action_model(page_url=page_url))
+		self.ActionModel = action_model
 		if self.settings.flash_mode:
-			self.AgentOutput = AgentOutput.type_with_custom_actions_flash_mode(self.ActionModel)
+			self.AgentOutput = AgentOutput.type_with_custom_actions_flash_mode(action_model)
 		elif self.settings.use_thinking:
-			self.AgentOutput = AgentOutput.type_with_custom_actions(self.ActionModel)
+			self.AgentOutput = AgentOutput.type_with_custom_actions(action_model)
 		else:
-			self.AgentOutput = AgentOutput.type_with_custom_actions_no_thinking(self.ActionModel)
-		self.DoneActionModel = create_action_model(include_actions=['done'], page_url=page_url)
+			self.AgentOutput = AgentOutput.type_with_custom_actions_no_thinking(action_model)
+		done_action_model = cast(type[ActionModel], create_action_model(include_actions=['done'], page_url=page_url))
+		self.DoneActionModel = done_action_model
 		if self.settings.flash_mode:
-			self.DoneAgentOutput = AgentOutput.type_with_custom_actions_flash_mode(self.DoneActionModel)
+			self.DoneAgentOutput = AgentOutput.type_with_custom_actions_flash_mode(done_action_model)
 		elif self.settings.use_thinking:
-			self.DoneAgentOutput = AgentOutput.type_with_custom_actions(self.DoneActionModel)
+			self.DoneAgentOutput = AgentOutput.type_with_custom_actions(done_action_model)
 		else:
-			self.DoneAgentOutput = AgentOutput.type_with_custom_actions_no_thinking(self.DoneActionModel)
+			self.DoneAgentOutput = AgentOutput.type_with_custom_actions_no_thinking(done_action_model)
 
 	async def _update_action_models_for_page(self, page_url: str) -> None:
 		"""Update Browser Use-style action model classes for page-filtered tools."""
 		self._setup_action_models_for_page(page_url)
 
-	def _convert_initial_actions(self, actions: list[dict[str, dict[str, Any]]]) -> list[ActionModel]:
+	def _convert_initial_actions(self, actions: list[dict[str, dict[str, Any]]]) -> list[Any]:
 		"""Convert dictionary initial actions to Browser Use action model instances when possible."""
 		converted_actions: list[Any] = []
 		registry = getattr(getattr(self.tools, 'registry', None), 'registry', None)
@@ -5666,9 +5665,12 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		if not callable(get_state):
 			raise ValueError('BrowserSession does not expose get_browser_state_summary')
 
-		browser_state_summary = await get_state(
-			include_screenshot=True,
-			include_recent_events=self.include_recent_events,
+		browser_state_summary = await cast(
+			Awaitable[BrowserStateSummary],
+			get_state(
+				include_screenshot=True,
+				include_recent_events=self.include_recent_events,
+			),
 		)
 		await self._check_and_update_downloads(f'Step {self.state.n_steps}: after getting browser state')
 		self._log_step_context(browser_state_summary)
@@ -5678,7 +5680,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		page_filtered_actions = None
 		registry = getattr(getattr(self.tools, 'registry', None), 'get_prompt_description', None)
 		if callable(registry):
-			page_filtered_actions = registry(browser_state_summary.url)
+			page_filtered_actions = cast(str | None, registry(browser_state_summary.url))
 
 		self._message_manager.create_state_messages(
 			browser_state_summary=browser_state_summary,
@@ -5702,7 +5704,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		urls_replaced = self._process_messsages_and_replace_long_urls_shorter_ones(input_messages)
 		response = await self.llm.ainvoke(input_messages, output_format=self.AgentOutput)
-		parsed: AgentOutput = getattr(response, 'completion', response)
+		parsed = cast(AgentOutput, getattr(response, 'completion', response))
 
 		if urls_replaced:
 			self._recursive_process_all_strings_inside_pydantic_model(parsed, urls_replaced)
@@ -5742,8 +5744,12 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			model_output = await self.get_model_output(input_messages + [clarification_message])
 			if has_empty_actions(model_output):
 				self.logger.warning('Model still returned empty after retry. Inserting safe noop action.')
+				if self.DoneActionModel is None or self.ActionModel is None:
+					raise RuntimeError('No action model is available for the fallback done action.')
 				try:
-					done_action = self.DoneActionModel(done={'success': False, 'text': 'No next action returned by LLM!'})
+					done_action = cast(Any, self.DoneActionModel)(
+						done={'success': False, 'text': 'No next action returned by LLM!'}
+					)
 				except Exception:
 					done_action = self.ActionModel()
 					setattr(done_action, 'done', {'success': False, 'text': 'No next action returned by LLM!'})
@@ -6083,10 +6089,11 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		nav_actions = [_initial_navigation_params_from_action(payload) for payload in payloads]
 		if not nav_actions or any(action is None for action in nav_actions):
 			return None
+		resolved_navigation_actions = cast(list[tuple[str, bool]], nav_actions)
 		results: list[ActionResult] = []
-		for url, new_tab in nav_actions:
+		for url, new_tab in resolved_navigation_actions:
 			try:
-				await navigate_to(url, new_tab=new_tab)
+				await cast(Awaitable[Any], navigate_to(url, new_tab=new_tab))
 			except Exception as exc:
 				message = f'Initial navigation to {url} failed: {exc}'
 				self.logger.warning(message)
@@ -6129,7 +6136,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		last_state: BrowserStateSummary | None = None
 		while True:
 			try:
-				state = await get_state(include_screenshot=False)
+				state = await cast(Awaitable[BrowserStateSummary | None], get_state(include_screenshot=False))
 			except Exception as exc:
 				self.logger.debug(f'Initial navigation state probe failed: {exc}')
 				state = None
@@ -6582,7 +6589,13 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			return
 		start_step = max(1, self.state.n_steps - len(self.history.history) + 1)
 		for offset, history_item in enumerate(self.history.history):
-			result = self.register_new_step_callback(history_item.state, None, start_step + offset)
+			if history_item.model_output is None:
+				continue
+			result = cast(Any, self.register_new_step_callback)(
+				history_item.state,
+				history_item.model_output,
+				start_step + offset,
+			)
 			if inspect.isawaitable(result):
 				await result
 		self._last_step_callback_history_id = history_id
@@ -6793,10 +6806,10 @@ def _align_browser_use_agent_signatures() -> None:
 		except (TypeError, ValueError, AttributeError):
 			continue
 	try:
-		Agent.__signature__ = inspect.signature(_PythonAgent)
+		setattr(Agent, '__signature__', inspect.signature(_PythonAgent))
 	except (TypeError, ValueError, AttributeError):
 		pass
-	agent_hook_func = Callable[[_PythonAgent], Awaitable[None]]
+	agent_hook_func: Any = Callable[[_PythonAgent], Awaitable[None]]
 	for name in ('run', 'run_sync'):
 		beta_method = getattr(Agent, name, None)
 		if beta_method is None:

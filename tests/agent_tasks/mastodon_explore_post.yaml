@@ -1,0 +1,28 @@
+name: Inspect the first Mastodon Explore post
+source_id: mastodon_explore
+task: Visit https://mastodon.social/explore, select the Posts view if it is not already selected, and return the display name, account handle, and a concise summary of the first public post shown.
+judge_context:
+  - The result must come from the first post in Mastodon Social's public Explore Posts view.
+  - The output must contain the account display name, account handle, and a summary of the post.
+max_steps: 12
+keyless:
+  start_url: https://mastodon.social/explore
+  expected_domains: [mastodon.social]
+  actions:
+    - action: click
+      selectors: ['a[href="/explore"]', 'a[href$="/explore"]']
+      optional: true
+      wait_after_seconds: 1
+  collections:
+    - name: posts
+      root_selectors: ['article.status', '.status']
+      min_items: 1
+      limit: 1
+      fields:
+        - name: display_name
+          selectors: ['.display-name__html', '.display-name strong']
+        - name: account_handle
+          selectors: ['.display-name__account']
+        - name: content
+          selectors: ['.status__content', '.status__content__text']
+  min_selector_count: 1

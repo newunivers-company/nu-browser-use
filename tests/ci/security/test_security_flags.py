@@ -8,6 +8,14 @@ from browser_use.browser.profile import BrowserProfile
 class TestBrowserProfileDisableSecurity:
 	"""Test disable_security flag behavior."""
 
+	def test_default_args_use_non_interactive_credential_stores(self):
+		"""Headless launches must not block while waiting for an unavailable desktop keyring."""
+		profile = BrowserProfile(user_data_dir=tempfile.mkdtemp(prefix='test-credential-store-'), headless=True)
+		args = profile.get_args()
+
+		assert '--password-store=basic' in args
+		assert '--use-mock-keychain' in args
+
 	def test_disable_security_preserves_extension_features(self):
 		"""Test that disable_security=True doesn't break extension features by properly merging --disable-features flags."""
 

@@ -43,7 +43,7 @@ To get started with Browser Use you need to install the package and create an `.
 
 ```bash create environment theme={null}
 pip install uv
-uv venv --python 3.12
+uv venv --python 3.11
 ```
 
 ```bash activate environment theme={null}
@@ -264,7 +264,7 @@ agent = Agent(
 )
 
 async def main():
-    history = await agent.run(max_steps=100)
+    history = await agent.run()
 ```
 
 * `task`: The task you want to automate.
@@ -272,12 +272,14 @@ async def main():
 
 The agent is executed using the async `run()` method:
 
-* `max_steps` (default: `100`): Maximum number of steps an agent can take.
+* `max_steps`: Maximum number of steps an agent can take. See the [generated configuration defaults](docs/configuration-defaults.md) for the runtime default.
 
 Check out all customizable parameters <a href="https://docs.browser-use.com/customize/agent/all-parameters"> here</a>.
 
 # Agent All Parameters
 > Complete reference for all agent configuration options
+
+Runtime defaults are generated from the Python API in [docs/configuration-defaults.md](docs/configuration-defaults.md). This section describes behavior without duplicating those values.
 
 ## Available Parameters
 
@@ -289,15 +291,15 @@ Check out all customizable parameters <a href="https://docs.browser-use.com/cust
 
 ### Vision & Processing
 
-* `use_vision` (default: `"auto"`): Vision mode - `"auto"` includes screenshot tool but only uses vision when requested, `True` always includes screenshots, `False` never includes screenshots and excludes screenshot tool
+* `use_vision`: Controls screenshot availability. `True` includes screenshots, while `False` excludes screenshots and the screenshot tool.
 * `vision_detail_level` (default: `'auto'`): Screenshot detail level - `'low'`, `'high'`, or `'auto'`
 * `page_extraction_llm`: Separate LLM model for page content extraction. You can choose a small & fast model because it only needs to extract text from the page (default: same as `llm`)
 
 ### Actions & Behavior
 
 * `initial_actions`: List of actions to run before the main task without LLM. [Example](https://github.com/browser-use/browser-use/blob/main/examples/features/initial_actions.py)
-* `max_actions_per_step` (default: `3`): Maximum actions per step, e.g. for form filling the agent can output 3 fields at once. We execute the actions until the page changes.
-* `max_failures` (default: `3`): Maximum retries for steps with errors
+* `max_actions_per_step`: Maximum actions per step. Actions execute until the page or focused target changes.
+* `max_failures`: Maximum retries for steps with errors.
 * `final_response_after_failure` (default: `True`): If True, attempt to force one final model call with intermediate output after max\_failures is reached
 * `use_thinking` (default: `True`): Controls whether the agent uses its internal "thinking" field for explicit reasoning steps.
 * `flash_mode` (default: `False`): Fast mode that skips evaluation, next goal and thinking and only uses memory. If `flash_mode` is enabled, it overrides `use_thinking` and disables the thinking process entirely. [Example](https://github.com/browser-use/browser-use/blob/main/examples/getting_started/05_fast_agent.py)
@@ -322,8 +324,8 @@ Check out all customizable parameters <a href="https://docs.browser-use.com/cust
 ### Performance & Limits
 
 * `max_history_items`: Maximum number of last steps to keep in the LLM memory. If `None`, we keep all steps.
-* `llm_timeout` (default: `90`): Timeout in seconds for LLM calls
-* `step_timeout` (default: `120`): Timeout in seconds for each step
+* `llm_timeout`: Timeout in seconds for LLM calls. When omitted, the shared runtime selects it from the model family.
+* `step_timeout`: Timeout in seconds for each step.
 * `directly_open_url` (default: `True`): If we detect a url in the task, we directly open it.
 
 ### Advanced Options

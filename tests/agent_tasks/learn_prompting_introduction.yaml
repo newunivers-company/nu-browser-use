@@ -1,0 +1,23 @@
+name: Inspect the Learn Prompting introduction
+source_id: learn_prompting
+task: Visit https://learnprompting.org/docs/introduction and return the page title, the heading of its motivating example, and a one-sentence summary of what that example asks the AI to produce.
+judge_context:
+  - The output must use the Learn Prompting introduction page.
+  - The output must contain the page title, the motivating-example heading, and an accurate one-sentence summary of its requested output.
+max_steps: 10
+keyless:
+  start_url: https://learnprompting.org/docs/introduction
+  expected_domains: [learnprompting.org]
+  fields:
+    - name: page_heading
+      selectors: ['main h1', 'article h1', 'h1']
+  collections:
+    - name: section_headings
+      root_selectors: ['main h2', 'article h2']
+      min_items: 1
+      limit: 4
+      fields:
+        - name: title
+          selectors: []
+  required_text_patterns: ['Introduction', 'motivating']
+  min_selector_count: 1

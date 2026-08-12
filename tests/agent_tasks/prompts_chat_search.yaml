@@ -1,0 +1,29 @@
+name: Search prompts.chat for a Linux terminal prompt
+source_id: prompts_chat
+task: Visit https://prompts.chat, use the site's prompt search for "Linux Terminal", and return the matching prompt title plus the first sentence of its prompt body.
+judge_context:
+  - The agent must use prompts.chat and search for Linux Terminal.
+  - The output must contain the matching prompt title and the first sentence of its prompt text.
+max_steps: 12
+keyless:
+  start_url: https://prompts.chat/
+  expected_domains: [prompts.chat]
+  actions:
+    - action: fill
+      selectors: ['input[type="search"]', 'input[placeholder*="Search"]', 'input[name="search"]']
+      value: Linux Terminal
+      wait_after_seconds: 2
+      optional: true
+    - action: submit
+      selectors: ['input[placeholder="Search prompts..."]', 'input[type="search"]']
+      fallback_url: https://prompts.chat/prompts?q=Linux%20Terminal
+      wait_after_seconds: 3
+    - action: navigate
+      url: https://prompts.chat/prompts?q=Linux%20Terminal&ai=0
+      wait_after_seconds: 3
+  fields:
+    - name: matching_prompt
+      selectors: ['main', 'body']
+      pattern: 'Linux Terminal'
+  required_text_patterns: ['Linux Terminal']
+  min_selector_count: 1

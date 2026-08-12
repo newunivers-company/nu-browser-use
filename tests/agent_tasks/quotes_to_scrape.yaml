@@ -1,0 +1,21 @@
+name: Extract the first quote and author
+source_id: quotes_to_scrape
+task: Visit https://quotes.toscrape.com and return the first quote together with its author.
+judge_context:
+  - The output must contain the first quote shown on the page.
+  - The output must contain the author of that quote.
+max_steps: 10
+keyless:
+  start_url: https://quotes.toscrape.com/
+  expected_domains: [quotes.toscrape.com]
+  collections:
+    - name: quotes
+      root_selectors: ['.quote']
+      min_items: 1
+      limit: 1
+      fields:
+        - name: quote
+          selectors: ['.text']
+        - name: author
+          selectors: ['.author']
+  min_selector_count: 1

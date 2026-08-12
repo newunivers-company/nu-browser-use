@@ -1,0 +1,24 @@
+name: Compare basic prompts in the Prompt Engineering Guide
+source_id: prompting_guide_basics
+task: Visit https://www.promptingguide.ai/introduction/basics and return the two main section headings plus both prompt/output pairs used in the first section to show how a more specific instruction improves the result.
+judge_context:
+  - The output must use the Basics of Prompting page in the Prompt Engineering Guide.
+  - The output must contain the two main section headings in page order.
+  - The output must accurately pair both prompts in the first section with their displayed outputs.
+max_steps: 12
+keyless:
+  start_url: https://www.promptingguide.ai/introduction/basics
+  expected_domains: [promptingguide.ai]
+  fields:
+    - name: page_heading
+      selectors: ['main h1', 'article h1', 'h1']
+  collections:
+    - name: sections
+      root_selectors: ['main h2', 'article h2']
+      min_items: 2
+      limit: 2
+      fields:
+        - name: title
+          selectors: []
+  required_text_patterns: ['Basics of Prompting', 'Text Summarization']
+  min_selector_count: 1

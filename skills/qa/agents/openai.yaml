@@ -1,0 +1,4 @@
+interface:
+  display_name: "QA"
+  short_description: "QA-test a website or web app and return a 1-5 quality score (..."
+  default_prompt: "Use $qa to QA-test a website or web app and return a 1-5 quality score (5 = flawless, 1 = broken) with evidence."

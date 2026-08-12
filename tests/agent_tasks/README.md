@@ -9,6 +9,7 @@ Contribute your own agent tasks and we test if the agent solves them for CI test
 
 ```yaml
 name: My Task Name
+source_id: stable_catalog_source_id
 task: Describe the task for the agent to perform
 judge_context:
   - List criteria for success, one per line
@@ -17,16 +18,128 @@ max_steps: 10
 
 ## Guidelines
 - Be specific in your task and criteria.
+- Register the source in `tests/data_sources.yaml` and use its stable `source_id`.
 - The `judge_context` should list what counts as a successful result.
 - The agent's output will be judged by an LLM using these criteria.
 
-## Running the Tests
+## Data Source Levels
 
-To run all agent tasks:
+- `behavioral`: a public, repeatable source with a matching browser-agent YAML task.
+- `availability`: a login-gated, JavaScript-heavy, region-sensitive, or anti-bot source checked for reachability without pretending it is a deterministic agent scenario.
+
+Validate the catalog and task mapping locally:
 
 ```bash
-pytest tests/ci/test_agent_real_tasks.py
+uv run pytest tests/ci/test_data_source_integrity.py
+uv run python -m scripts.check_data_sources
 ```
+
+Use `--strict` when every availability-only source must also return one of its catalogued HTTP statuses:
+
+```bash
+uv run python -m scripts.check_data_sources --strict
+```
+
+Run the same catalog through isolated real Chromium sessions to distinguish reachability from model-actionable DOM state:
+
+```bash
+uv run python -m scripts.check_browser_data_sources \
+  --concurrency 1 \
+  --strict \
+  --output /tmp/browser-use-browser-probe.json
+```
+
+Use `--disable-sandbox` only inside a trusted container or on a CI host where Chromium user namespaces are unavailable.
+The browser probe disables default extensions unless `--enable-extensions` is explicitly requested, retries initial non-interactive
+JavaScript shells, retries a failed source in a fresh Chromium process, keeps its state and shutdown timeouts longer than the internal
+DOM capture deadline, and removes every isolated temporary profile after use. Failures before navigation are classified and counted as
+`browser_unavailable`, so host/runtime instability is not misreported as a website regression.
+
+Run a robots-aware, read-only crawl experiment over safe same-origin links:
+
+```bash
+uv run python -m scripts.crawl_data_sources \
+  --max-pages-per-source 4 \
+  --max-depth 1 \
+  --output /tmp/browser-use-crawl.json
+```
+
+Use repeated `--source`, `--category`, or `--test-level` filters for targeted follow-up runs. The crawler excludes
+login, logout, registration, deletion, unsubscription, and Cloudflare email-protection routes from link traversal.
+
+## Running the Tests
+
+Every task includes a validated `keyless` contract. Run all 17 live browser contracts without any LLM API key:
+
+```bash
+uv run python tests/ci/evaluate_tasks.py \
+  --mode deterministic \
+  --max-parallel 1 \
+  --output /tmp/keyless-evaluation.json
+```
+
+Use `--disable-sandbox` only on a trusted CI host where Chromium user namespaces are unavailable. Keyless contracts allow only validated
+navigation, click, fill, submit, and wait actions; task YAML cannot execute arbitrary browser JavaScript. Results include structured fields,
+collections, validator evidence, timings, action traces, and machine-readable failure reasons.
+Each isolated evaluator has a 150-second process deadline and one fresh-process retry; a timeout terminates its Chromium process group instead
+of blocking the complete CI lane. Override these bounded defaults with `--task-timeout-seconds` and `--subprocess-attempts` when required.
+
+Available evaluation modes:
+
+- `auto`: use an explicitly selected subscription CLI route first, otherwise prefer `ChatBrowserUse` plus the independent Google judge when
+  both keys exist, then use an explicitly configured local model, otherwise run deterministic contracts.
+- `deterministic`: execute the live browser contract without an LLM. This is the required CI lane and requires all 17 tasks to execute and pass.
+- `replay`: use native `Agent.rerun_history()` when the task declares a checked-in
+  `replay_history_path` inside its task directory. AI-dependent history steps fail explicitly
+  because replay never calls an external model. Without saved history, replay the same validated
+  declarative actions as a separate regression tier.
+- `local`: run the real agent and judge through a user-selected Ollama or OpenAI-compatible local model.
+- `subscription`: run the real text-only agent and judge through authenticated Codex, Claude, or Grok CLIs without forwarding API keys.
+- `cloud`: run the preferred `ChatBrowserUse` agent and independent Google judge.
+
+### Subscription-authenticated models
+
+For repeatable production browser automation, `ChatBrowserUse` remains the recommended default. The subscription route is an opt-in local
+evaluation and development fallback for machines that are already signed in to the official CLIs. Sign in with `codex login`,
+`claude auth login`, or `grok login --oauth`; Codex supports ChatGPT subscription authentication as described in the
+[official OpenAI authentication documentation](https://learn.chatgpt.com/docs/auth).
+
+Run all 17 scenarios with one model acting and a different model judging:
+
+```bash
+uv run python tests/ci/evaluate_tasks.py \
+  --mode subscription \
+  --subscription-provider codex \
+  --subscription-judge-provider claude \
+  --max-parallel 1 \
+  --task-timeout-seconds 300 \
+  --output /tmp/subscription-evaluation.json
+```
+
+Valid providers are `codex`, `claude`, and `grok`. `--subscription-model` and `--subscription-judge-model` forward an explicit model name
+verbatim; omitting them leaves model selection to the corresponding CLI. The matching environment variables are
+`SUBSCRIPTION_LLM_PROVIDER`, `SUBSCRIPTION_LLM_MODEL`, `SUBSCRIPTION_JUDGE_PROVIDER`, and `SUBSCRIPTION_JUDGE_MODEL`.
+
+The adapter reads no credential files, removes OpenAI/Anthropic/xAI API-key variables from child processes, disables coding tools, web
+search, persistence, and subagents where each CLI supports those controls, and uses a temporary read-only working directory. It is text-only,
+so normal Python usage must configure `Agent(use_vision=False)`. Missing or expired subscriptions are reported as skipped provider routes;
+an all-skipped run still fails the quality gate. Do not place personal subscription sessions in shared CI runners.
+
+Local model names are never replaced. Configure an installed model explicitly:
+
+```bash
+KEYLESS_LLM_PROVIDER=ollama \
+KEYLESS_LLM_MODEL='<installed-model-name>' \
+KEYLESS_LLM_BASE_URL=http://127.0.0.1:11434 \
+uv run python tests/ci/evaluate_tasks.py --mode local
+```
+
+For an OpenAI-compatible local server, use `KEYLESS_LLM_PROVIDER=openai_like` and a base URL ending in `/v1`. The cloud runner requires both
+`BROWSER_USE_API_KEY` for `ChatBrowserUse` and `GOOGLE_API_KEY` for the independent judge. Provider availability is checked once before task
+subprocesses are launched; local mode also performs one bounded inference preflight. An all-skipped run fails the quality gate.
+
+When a behavioral source consistently returns a verified anti-bot page, a task may declare a minimal reviewed snapshot containing its review
+date, exact source URL, and canonical SHA-256. The report marks this as `snapshot_fallback`; it is never represented as successful live extraction.
 
 ---
 

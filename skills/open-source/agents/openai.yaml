@@ -1,0 +1,4 @@
+interface:
+  display_name: "Open Source"
+  short_description: "Documentation reference for writing Python code using the bro..."
+  default_prompt: "Use $open-source to Documentation reference for writing Python code using the browser-use open-source library."

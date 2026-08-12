@@ -4746,6 +4746,18 @@ def test_beta_agent_constructor_aliases_match_browser_use():
 		assert str(exc_info.value) == expected_error
 
 
+def test_beta_agent_rejects_context_that_rust_actions_cannot_inject():
+	"""Beta must fail fast instead of silently dropping custom-action context."""
+	from browser_use.beta import Agent as BetaAgent
+
+	class LLM:
+		model = 'gpt-test'
+		provider = 'test'
+
+	with pytest.raises(NotImplementedError, match='Rust-backed actions cannot inject Python objects'):
+		BetaAgent(task='Use custom context.', llm=LLM(), context={'tenant_id': 'test'})
+
+
 def test_beta_agent_initializes_tools_and_action_models():
 	from browser_use.beta import Agent
 	from browser_use.tools.service import Tools

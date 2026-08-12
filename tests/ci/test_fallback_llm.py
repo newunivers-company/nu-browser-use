@@ -84,6 +84,29 @@ def create_mock_llm(
 class TestFallbackLLMParameter:
 	"""Test fallback_llm parameter initialization."""
 
+	def test_agent_context_and_unknown_argument_contract(self):
+		"""Agent preserves typed context and rejects misspelled configuration."""
+		from browser_use import Agent
+
+		primary = create_mock_llm('primary-model')
+		context = {'request_id': 'request-123'}
+		agent = Agent(task='Test task', llm=primary, context=context)
+
+		assert agent.context is context
+		with pytest.raises(TypeError, match='Unexpected Agent argument.*max_failuers'):
+			Agent(task='Test task', llm=primary, max_failuers=3)
+
+	def test_custom_context_alias_is_deprecated_but_supported(self):
+		"""The legacy alias remains usable while callers migrate to context."""
+		from browser_use import Agent
+
+		primary = create_mock_llm('primary-model')
+		context = {'request_id': 'request-123'}
+		with pytest.warns(DeprecationWarning, match='custom_context is deprecated'):
+			agent = Agent(task='Test task', llm=primary, custom_context=context)
+
+		assert agent.context is context
+
 	def test_fallback_llm_none_by_default(self):
 		"""Verify fallback_llm defaults to None."""
 		from browser_use import Agent

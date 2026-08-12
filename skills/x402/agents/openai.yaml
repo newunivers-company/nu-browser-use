@@ -1,0 +1,4 @@
+interface:
+  display_name: "X402"
+  short_description: "Set up Browser Use Cloud payments with x402 — pay per request..."
+  default_prompt: "Use $x402 to Set up Browser Use Cloud payments with x402 — pay per request from a crypto wallet (USDC on Base mainnet), no signup or API key."

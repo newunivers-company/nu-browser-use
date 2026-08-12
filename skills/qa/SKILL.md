@@ -84,3 +84,18 @@ Do not attempt to QA with anything other than browser-harness + a cloud browser.
 4. **Return the verdict**: lead with `Score: N/5`, then task, result, what worked, issues (tagged), edge cases, and evidence — per the rubric and output format in `references/methodology.md`. **Fanning out?** Give a per-flow `Score: N/5` line and an **overall score that reflects the weakest critical path** (don't average a broken flow up because others passed).
 
 Scale effort to the ask: a quick "does X work?" is a few interactions and one score; "thoroughly QA this" warrants more flows and edge cases. Keep the verdict honest, specific, and reproducible.
+
+<!-- nu-skill-execution-contract:v1 -->
+
+## Output contract
+
+Return these named deliverables: `findings`, `evidence_ledger`, `confidence_or_limits`, `recommended_actions`.
+Include assumptions, evidence or provenance, completion status, and known limitations.
+When a deliverable is a file, report its path and verify that it is non-empty.
+
+## Verification
+
+- Confirm every required deliverable is present, non-empty, and matches its declared format or schema.
+- Check referenced paths, commands, and claims against the captured evidence.
+- Distinguish dry-run, mock, sandbox, and live evidence; record commands and exit status when execution occurs.
+- Do not mark the task complete while required evidence or review remains missing.

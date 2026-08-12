@@ -1,11 +1,7 @@
 name: test
 permissions:
   actions: read
-  contents: write
-  pull-requests: write  # Allow writing comments on PRs
-  issues: write         # Allow writing comments on issues
-  statuses: write       # Allow writing statuses on PRs
-  discussions: write
+  contents: read
 
 # Cancel in-progress runs when a new commit is pushed to the same branch/PR
 concurrency:
@@ -125,11 +121,11 @@ jobs:
           path: |
             ~/.cache/uv
             .venv
-          key: ${{ runner.os }}-uv-venv-${{ hashFiles('pyproject.toml') }}
+          key: ${{ runner.os }}-uv-venv-${{ hashFiles('pyproject.toml', 'uv.lock') }}
           restore-keys: |
             ${{ runner.os }}-uv-venv-
 
-      - run: uv sync --dev --all-extras --refresh-package browser-use-core
+      - run: uv sync --locked --dev --all-extras
 
       - name: Get week number for cache key
         id: week
@@ -181,21 +177,17 @@ jobs:
           retry_on: error
           command: pytest "tests/ci/${{ matrix.test_filename }}.py"
 
-  evaluate-tasks:
+  evaluate-tasks-keyless:
     needs: setup-chromium
     runs-on: ubuntu-latest
-    timeout-minutes: 8  # Allow more time for agent eval
+    timeout-minutes: 12
     env:
       IN_DOCKER: 'true'
       BROWSER_USE_CLOUD_SYNC: 'false'
       ANONYMIZED_TELEMETRY: 'false'
-      BROWSER_USE_LOGGING_LEVEL: 'DEBUG'
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-      BROWSER_USE_API_KEY: ${{ secrets.BROWSER_USE_API_KEY }}
+      BROWSER_USE_LOGGING_LEVEL: 'INFO'
+      EVALUATION_MIN_PASS_RATE: '1.0'
+      EVALUATION_MIN_EXECUTED_TASKS: '17'
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -209,11 +201,91 @@ jobs:
           path: |
             ~/.cache/uv
             .venv
-          key: ${{ runner.os }}-uv-venv-${{ hashFiles('pyproject.toml') }}
+          key: ${{ runner.os }}-uv-venv-${{ hashFiles('pyproject.toml', 'uv.lock') }}
           restore-keys: |
             ${{ runner.os }}-uv-venv-
 
-      - run: uv sync --dev --all-extras --refresh-package browser-use-core
+      - run: uv sync --locked --dev --all-extras
+
+      - name: Get week number for cache key
+        id: week
+        run: echo "number=$(date +%Y-W%U)" >> $GITHUB_OUTPUT
+
+      - name: Restore Chromium cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-${{ runner.arch }}-chromium-${{ steps.week.outputs.number }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-chromium-
+
+      - name: Install Chromium when the cache is empty
+        run: uvx playwright install chromium --with-deps --no-shell
+
+      - name: Run all keyless deterministic browser contracts
+        run: |
+          uv run --no-sync python tests/ci/evaluate_tasks.py \
+            --mode deterministic \
+            --disable-sandbox \
+            --max-parallel 1 \
+            --output keyless-evaluation.json
+
+      - name: Upload keyless evaluation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: keyless-evaluation
+          path: keyless-evaluation.json
+          if-no-files-found: error
+
+  evaluate-tasks-cloud:
+    needs: setup-chromium
+    runs-on: ubuntu-latest
+    timeout-minutes: 8  # Allow more time for agent eval
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      IN_DOCKER: 'true'
+      BROWSER_USE_CLOUD_SYNC: 'false'
+      ANONYMIZED_TELEMETRY: 'false'
+      BROWSER_USE_LOGGING_LEVEL: 'DEBUG'
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      BROWSER_USE_API_KEY: ${{ secrets.BROWSER_USE_API_KEY }}
+      EVALUATION_MIN_PASS_RATE: '0.60'
+      EVALUATION_MIN_EXECUTED_TASKS: '3'
+    steps:
+      - name: Check optional cloud evaluation credentials
+        id: cloud-credentials
+        run: |
+          if [ -n "$BROWSER_USE_API_KEY" ] && [ -n "$GOOGLE_API_KEY" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Cloud evaluation skipped: BROWSER_USE_API_KEY and GOOGLE_API_KEY are not both configured."
+          fi
+
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          activate-environment: true
+
+      - name: Cache uv packages and venv
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/uv
+            .venv
+          key: ${{ runner.os }}-uv-venv-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-venv-
+
+      - run: uv sync --locked --dev --all-extras
 
       - name: Get week number for cache key
         id: week
@@ -243,6 +315,7 @@ jobs:
             ${{ runner.os }}-browseruse-extensions-
 
       - name: Run agent tasks evaluation and capture score
+        if: steps.cloud-credentials.outputs.available == 'true'
         id: eval
         uses: nick-fields/retry@v3
         with:
@@ -250,51 +323,71 @@ jobs:
           max_attempts: 1
           retry_on: error
           command: |
-            python tests/ci/evaluate_tasks.py > result.txt
+            set +e
+            uv run --no-sync python tests/ci/evaluate_tasks.py \
+              --mode cloud \
+              --disable-sandbox \
+              --max-parallel 1 \
+              --output cloud-evaluation.json > result.txt
+            EVALUATION_EXIT_CODE=$?
+            set -e
             cat result.txt
             echo "PASSED=$(grep '^PASSED=' result.txt | cut -d= -f2)" >> $GITHUB_ENV
+            echo "FAILED=$(grep '^FAILED=' result.txt | cut -d= -f2)" >> $GITHUB_ENV
+            echo "SKIPPED=$(grep '^SKIPPED=' result.txt | cut -d= -f2)" >> $GITHUB_ENV
+            echo "EXECUTED=$(grep '^EXECUTED=' result.txt | cut -d= -f2)" >> $GITHUB_ENV
+            echo "PASS_RATE=$(grep '^PASS_RATE=' result.txt | cut -d= -f2)" >> $GITHUB_ENV
             echo "TOTAL=$(grep '^TOTAL=' result.txt | cut -d= -f2)" >> $GITHUB_ENV
             echo "DETAILED_RESULTS=$(grep '^DETAILED_RESULTS=' result.txt | cut -d= -f2-)" >> $GITHUB_ENV
+            exit "$EVALUATION_EXIT_CODE"
+
+      - name: Upload cloud evaluation evidence
+        if: always() && steps.cloud-credentials.outputs.available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloud-evaluation
+          path: cloud-evaluation.json
+          if-no-files-found: warn
 
       - name: Print agent evaluation summary
+        if: always() && env.TOTAL != ''
         run: |
-          echo "Agent tasks passed: $PASSED / $TOTAL"
+          echo "Agent tasks passed: $PASSED / $EXECUTED executed ($SKIPPED skipped, $TOTAL total)"
 
       - name: Write agent evaluation summary to workflow overview
+        if: always() && env.TOTAL != ''
         run: |
-          if [ "$PASSED" = "$TOTAL" ]; then
+          if [ "$PASSED" = "$EXECUTED" ] && [ "$SKIPPED" = "0" ]; then
             COLOR="green"
           else
             COLOR="yellow"
           fi
-          echo "<h2>Agent Tasks Score: <span style='color:$COLOR;'>$PASSED/$TOTAL</span></h2>" >> $GITHUB_STEP_SUMMARY
+          echo "<h2>Agent Tasks Score: <span style='color:$COLOR;'>$PASSED/$EXECUTED</span> ($SKIPPED skipped)</h2>" >> $GITHUB_STEP_SUMMARY
 
       - name: Comment PR with agent evaluation results
-        if: github.event_name == 'pull_request'
+        if: always() && github.event_name == 'pull_request' && env.DETAILED_RESULTS != ''
         uses: actions/github-script@v7
         continue-on-error: true
         with:
           script: |
             const passed = parseInt(process.env.PASSED);
+            const failed = parseInt(process.env.FAILED);
+            const skipped = parseInt(process.env.SKIPPED);
+            const executed = parseInt(process.env.EXECUTED);
             const total = parseInt(process.env.TOTAL);
             const detailedResults = JSON.parse(process.env.DETAILED_RESULTS);
-            const score = `${passed}/${total}`;
-            const percentage = Math.round((passed / total) * 100);
-
-            // Fail the workflow if 0% pass rate
-            if (percentage === 0) {
-              core.setFailed(`Evaluation failed: 0% pass rate (${passed}/${total})`);
-            }
+            const score = `${passed}/${executed}`;
+            const percentage = executed > 0 ? Math.round((passed / executed) * 100) : 0;
 
             // Create detailed table
             let tableRows = '';
             detailedResults.forEach(result => {
-              const emoji = result.success ? '✅' : '❌';
-              const status = result.success ? 'Pass' : 'Fail';
+              const emoji = result.status === 'passed' ? '✅' : result.status === 'skipped' ? '⏭️' : '❌';
+              const status = result.status[0].toUpperCase() + result.status.slice(1);
               tableRows += `| ${result.task} | ${emoji} ${status} | ${result.reason} |\n`;
             });
 
-            const comment = `## Agent Task Evaluation Results: ${score} (${percentage}%)
+            const comment = `## Agent Task Evaluation Results: ${score} (${percentage}%, ${skipped} skipped)
 
             <details>
             <summary>View detailed results</summary>

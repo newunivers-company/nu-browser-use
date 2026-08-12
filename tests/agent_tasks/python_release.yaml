@@ -1,0 +1,16 @@
+name: Find the latest Python release
+source_id: python_downloads
+task: Visit https://www.python.org/downloads/ and return the newest Python release version displayed on the page.
+judge_context:
+  - The agent must use the official python.org downloads page.
+  - The output must contain the newest displayed Python release version.
+max_steps: 10
+keyless:
+  start_url: https://www.python.org/downloads/
+  expected_domains: [python.org]
+  fields:
+    - name: release_version
+      selectors: ['main', '#content', 'body']
+      pattern: 'Python\s+(\d+\.\d+\.\d+)'
+  required_text_patterns: ['Download the latest source release|Download the latest version of Python']
+  min_selector_count: 1

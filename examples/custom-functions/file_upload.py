@@ -93,8 +93,7 @@ async def main():
 		llm=llm,
 		browser_session=browser_session,
 		tools=tools,
-		# Pass the available file paths to the tools context
-		custom_context={'available_file_paths': available_file_paths},
+		available_file_paths=available_file_paths,
 	)
 
 	# Run the agent

@@ -282,9 +282,43 @@ class SecurityWatchdog(BaseWatchdog):
 		else:
 			# Exact match
 			if '://' in pattern:
-				# Full URL pattern
-				if url.startswith(pattern):
+				# Full URL patterns are scoped to their parsed origin.  A raw prefix
+				# check would also accept attacker-controlled hosts such as
+				# ``https://example.com.evil.test`` and user-info forms such as
+				# ``https://example.com@evil.test``.
+				from urllib.parse import urlparse
+
+				try:
+					parsed_url = urlparse(url)
+					parsed_pattern = urlparse(pattern)
+
+					if parsed_pattern.username is not None or parsed_pattern.password is not None:
+						return False
+					if not parsed_pattern.scheme or not parsed_pattern.hostname:
+						return False
+					if scheme.lower() != parsed_pattern.scheme.lower():
+						return False
+					if host.lower() != parsed_pattern.hostname.lower():
+						return False
+
+					# Ports are part of the allowlisted origin. Treat omitted standard
+					# ports as their explicit equivalents (HTTPS 443, HTTP 80).
+					default_ports = {'https': 443, 'http': 80}
+					pattern_port = parsed_pattern.port or default_ports.get(parsed_pattern.scheme.lower())
+					url_port = parsed_url.port or default_ports.get(parsed_url.scheme.lower())
+					if url_port != pattern_port:
+						return False
+
+					# Host-only full URL patterns allow any path.  When a path is
+					# supplied, restrict matching to that path subtree.
+					pattern_path = parsed_pattern.path.rstrip('/')
+					if pattern_path:
+						url_path = parsed_url.path.rstrip('/')
+						return url_path == pattern_path or url_path.startswith(f'{pattern_path}/')
+
 					return True
+				except (TypeError, ValueError):
+					return False
 			else:
 				# Domain-only pattern (case-insensitive comparison)
 				if host.lower() == pattern.lower():

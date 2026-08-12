@@ -1,0 +1,23 @@
+name: Extract Anthropic prompt engineering prerequisites
+source_id: anthropic_prompting
+task: Visit Anthropic's prompt engineering overview at https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/overview and return all prerequisites listed under "Before prompt engineering".
+judge_context:
+  - The output must use the official Claude Platform documentation page.
+  - The output must include every prerequisite listed in the "Before prompt engineering" numbered list.
+max_steps: 10
+keyless:
+  start_url: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/overview
+  expected_domains: [platform.claude.com]
+  fields:
+    - name: page_heading
+      selectors: ['main h1', 'article h1', 'h1']
+  collections:
+    - name: prerequisites
+      root_selectors: ['main ol > li', 'article ol > li']
+      min_items: 1
+      limit: 10
+      fields:
+        - name: text
+          selectors: []
+  required_text_patterns: ['Before prompt engineering', 'success criteria']
+  min_selector_count: 1

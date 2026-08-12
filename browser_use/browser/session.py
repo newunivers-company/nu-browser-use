@@ -720,10 +720,24 @@ class BrowserSession(BaseModel):
 	@observe_debug(ignore_input=True, ignore_output=True, name='browser_session_start')
 	async def start(self) -> None:
 		"""Start the browser session."""
+		await self.attach_all_watchdogs()
+		await self._prepare_local_browser()
 		start_event = self.event_bus.dispatch(BrowserStartEvent())
 		await start_event
 		# Ensure any exceptions from the event handler are propagated
 		await start_event.event_result(raise_if_any=True, raise_if_none=False)
+
+	async def _prepare_local_browser(self) -> None:
+		"""Complete local browser installation before timed startup events begin."""
+		uses_cloud_browser = self.browser_profile.use_cloud or self.browser_profile.cloud_browser_params is not None
+		if self.cdp_url or not self.is_local or uses_cloud_browser:
+			return
+
+		if self._local_browser_watchdog is None:
+			raise RuntimeError('Local browser watchdog was not initialized during browser bootstrap.')
+		await self._local_browser_watchdog.prepare_browser_executable()
+		if self.browser_profile.enable_default_extensions:
+			await asyncio.to_thread(self.browser_profile.prepare_default_extensions)
 
 	async def kill(self) -> None:
 		"""Kill the browser session and reset all state."""

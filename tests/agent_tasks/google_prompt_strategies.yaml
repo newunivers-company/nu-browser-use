@@ -1,0 +1,23 @@
+name: Extract Gemini prompt strategy sections
+source_id: google_prompt_strategies
+task: Visit https://ai.google.dev/gemini-api/docs/prompting-strategies and return the exact titles of the first two main strategy sections that appear after the page introduction.
+judge_context:
+  - The output must use the official Google Gemini API prompt design strategies page.
+  - The output must contain the exact titles of the first two main strategy sections in page order.
+max_steps: 10
+keyless:
+  start_url: https://ai.google.dev/gemini-api/docs/prompting-strategies
+  expected_domains: [ai.google.dev]
+  fields:
+    - name: page_heading
+      selectors: ['main h1', 'h1']
+  collections:
+    - name: strategy_sections
+      root_selectors: ['main h2', 'article h2']
+      min_items: 2
+      limit: 2
+      fields:
+        - name: title
+          selectors: []
+  required_text_patterns: ['prompt design strategies|prompting strategies']
+  min_selector_count: 1

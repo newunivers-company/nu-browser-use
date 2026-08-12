@@ -2169,6 +2169,7 @@ Validated Code (after quote fixing):
 		self,
 		action: ActionModel,
 		browser_session: BrowserSession,
+		context: Context | None = None,
 		page_extraction_llm: BaseChatModel | None = None,
 		sensitive_data: dict[str, str | dict[str, str]] | None = None,
 		available_file_paths: list[str] | None = None,
@@ -2217,6 +2218,7 @@ Validated Code (after quote fixing):
 								sensitive_data=sensitive_data,
 								available_file_paths=available_file_paths,
 								extraction_schema=extraction_schema,
+								context=context,
 							),
 							timeout=timeout_s,
 						)
@@ -2281,6 +2283,7 @@ Validated Code (after quote fixing):
 					'available_file_paths',
 					'sensitive_data',
 					'extraction_schema',
+					'context',
 				}
 
 				# Extract action params (params for the action itself)

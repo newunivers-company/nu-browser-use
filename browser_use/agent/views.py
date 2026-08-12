@@ -528,24 +528,17 @@ class AgentHistory(BaseModel):
 		if not sensitive_data:
 			return data
 
-		filtered_data = {}
-		for key, value in data.items():
-			if isinstance(value, str):
-				filtered_data[key] = self._filter_sensitive_data_from_string(value, sensitive_data)
-			elif isinstance(value, dict):
-				filtered_data[key] = self._filter_sensitive_data_from_dict(value, sensitive_data)
-			elif isinstance(value, list):
-				filtered_data[key] = [
-					self._filter_sensitive_data_from_string(item, sensitive_data)
-					if isinstance(item, str)
-					else self._filter_sensitive_data_from_dict(item, sensitive_data)
-					if isinstance(item, dict)
-					else item
-					for item in value
-				]
-			else:
-				filtered_data[key] = value
-		return filtered_data
+		return {key: self._filter_sensitive_data_from_value(value, sensitive_data) for key, value in data.items()}
+
+	def _filter_sensitive_data_from_value(self, value: Any, sensitive_data: dict[str, str | dict[str, str]] | None) -> Any:
+		"""Recursively redact strings inside JSON-compatible history values."""
+		if isinstance(value, str):
+			return self._filter_sensitive_data_from_string(value, sensitive_data)
+		if isinstance(value, dict):
+			return self._filter_sensitive_data_from_dict(value, sensitive_data)
+		if isinstance(value, list):
+			return [self._filter_sensitive_data_from_value(item, sensitive_data) for item in value]
+		return value
 
 	def model_dump(self, sensitive_data: dict[str, str | dict[str, str]] | None = None, **kwargs) -> dict[str, Any]:
 		"""Custom serialization handling circular references and filtering sensitive data"""
@@ -554,13 +547,6 @@ class AgentHistory(BaseModel):
 		model_output_dump = None
 		if self.model_output:
 			action_dump = [action.model_dump(exclude_none=True, mode='json') for action in self.model_output.action]
-
-			# Filter sensitive data only from input action parameters if sensitive_data is provided
-			if sensitive_data:
-				action_dump = [
-					self._filter_sensitive_data_from_dict(action, sensitive_data) if 'input' in action else action
-					for action in action_dump
-				]
 
 			model_output_dump = {
 				'evaluation_previous_goal': self.model_output.evaluation_previous_goal,
@@ -576,17 +562,16 @@ class AgentHistory(BaseModel):
 			if self.model_output.plan_update is not None:
 				model_output_dump['plan_update'] = self.model_output.plan_update
 
-		# Handle result serialization - don't filter ActionResult data
-		# as it should contain meaningful information for the agent
 		result_dump = [r.model_dump(exclude_none=True, mode='json') for r in self.result]
 
-		return {
+		serialized_history = {
 			'model_output': model_output_dump,
 			'result': result_dump,
 			'state': self.state.to_dict(),
 			'metadata': self.metadata.model_dump() if self.metadata else None,
 			'state_message': self.state_message,
 		}
+		return self._filter_sensitive_data_from_dict(serialized_history, sensitive_data)
 
 
 AgentStructuredOutput = TypeVar('AgentStructuredOutput', bound=BaseModel)
@@ -668,8 +653,10 @@ class AgentHistoryList(BaseModel, Generic[AgentStructuredOutput]):
 
 	def model_dump(self, **kwargs) -> dict[str, Any]:
 		"""Custom serialization that properly uses AgentHistory's model_dump"""
+		sensitive_data = kwargs.pop('sensitive_data', None)
 		return {
-			'history': [h.model_dump(**kwargs) for h in self.history],
+			'history': [h.model_dump(sensitive_data=sensitive_data, **kwargs) for h in self.history],
+			'usage': self.usage.model_dump(mode='json') if self.usage else None,
 		}
 
 	@classmethod

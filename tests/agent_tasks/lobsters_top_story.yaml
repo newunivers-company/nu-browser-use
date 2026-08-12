@@ -1,0 +1,22 @@
+name: Find the top Lobsters story
+source_id: lobsters
+task: Visit https://lobste.rs and return the title and destination URL of the first ranked story.
+judge_context:
+  - The result must use the story ranked first on the Lobsters home page.
+  - The output must contain both the story title and its destination URL.
+max_steps: 10
+keyless:
+  start_url: https://lobste.rs/
+  expected_domains: [lobste.rs]
+  collections:
+    - name: stories
+      root_selectors: ['.story']
+      min_items: 1
+      limit: 1
+      fields:
+        - name: title
+          selectors: ['a.u-url', '.link a']
+        - name: url
+          selectors: ['a.u-url', '.link a']
+          attribute: href
+  min_selector_count: 1

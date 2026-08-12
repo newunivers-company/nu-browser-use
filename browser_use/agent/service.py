@@ -44,6 +44,7 @@ from browser_use.agent.message_manager.service import (
 	MessageManager,
 )
 from browser_use.agent.prompts import SystemPrompt
+from browser_use.agent.runtime import resolve_agent_context, resolve_default_llm, resolve_llm_timeout
 from browser_use.agent.views import (
 	ActionResult,
 	AgentError,
@@ -209,8 +210,11 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		max_clickable_elements_length: int = 40000,
 		_url_shortening_limit: int = 25,
 		enable_signal_handler: bool = True,
+		context: Context | None = None,
 		**kwargs,
 	):
+		self.context, _ = resolve_agent_context(context, kwargs)
+
 		# Validate llm_screenshot_size
 		if llm_screenshot_size is not None:
 			if not isinstance(llm_screenshot_size, tuple) or len(llm_screenshot_size) != 2:
@@ -221,17 +225,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			if width < 100 or height < 100:
 				raise ValueError('llm_screenshot_size dimensions must be at least 100 pixels')
 			self.logger.info(f'🖼️  LLM screenshot resizing enabled: {width}x{height}')
-		if llm is None:
-			default_llm_name = CONFIG.DEFAULT_LLM
-			if default_llm_name:
-				from browser_use.llm.models import get_llm_by_name
-
-				llm = get_llm_by_name(default_llm_name)
-			else:
-				# No default LLM specified, use the original default
-				from browser_use import ChatBrowserUse
-
-				llm = ChatBrowserUse()
+		llm = resolve_default_llm(llm)
 
 		# set flashmode = True if llm is ChatBrowserUse
 		if llm.provider == 'browser-use':
@@ -258,22 +252,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		# Set timeout based on model name if not explicitly provided
 		if llm_timeout is None:
-
-			def _get_model_timeout(llm_model: BaseChatModel) -> int:
-				"""Determine timeout based on model name"""
-				model_name = getattr(llm_model, 'model', '').lower()
-				if 'gemini' in model_name:
-					if '3-pro' in model_name:
-						return 90
-					return 75
-				elif 'groq' in model_name:
-					return 30
-				elif 'o3' in model_name or 'claude' in model_name or 'sonnet' in model_name or 'deepseek' in model_name:
-					return 90
-				else:
-					return 75  # Default timeout
-
-			llm_timeout = _get_model_timeout(llm)
+			llm_timeout = resolve_llm_timeout(llm)
 
 		self.id = task_id or uuid7str()
 		self.task_id: str = self.id
@@ -2790,6 +2769,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					sensitive_data=self.sensitive_data,
 					available_file_paths=self.available_file_paths,
 					extraction_schema=self.extraction_schema,
+					context=self.context,
 				)
 
 				if result.error:

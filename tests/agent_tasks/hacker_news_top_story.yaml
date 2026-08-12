@@ -1,0 +1,22 @@
+name: Find the current top Hacker News story
+source_id: hacker_news
+task: Visit https://news.ycombinator.com and return the title and destination URL of the first ranked story.
+judge_context:
+  - The agent must use the first ranked story, not a later item.
+  - The output must contain both the story title and its destination URL.
+max_steps: 10
+keyless:
+  start_url: https://news.ycombinator.com/
+  expected_domains: [news.ycombinator.com]
+  collections:
+    - name: stories
+      root_selectors: ['tr.athing']
+      min_items: 1
+      limit: 1
+      fields:
+        - name: title
+          selectors: ['.titleline > a', 'span.titleline a']
+        - name: url
+          selectors: ['.titleline > a', 'span.titleline a']
+          attribute: href
+  min_selector_count: 1

@@ -1,0 +1,23 @@
+name: Inspect the first prompt in the prompts.chat repository
+source_id: prompts_chat_github
+task: Visit https://github.com/f/prompts.chat, read the main README, and return the heading and first sentence of the first prompt entry listed after the repository introduction.
+judge_context:
+  - The output must be taken from the main README in the f/prompts.chat GitHub repository.
+  - The output must contain the first prompt entry heading and the first sentence of its prompt body.
+max_steps: 12
+keyless:
+  start_url: https://github.com/f/prompts.chat
+  expected_domains: [github.com]
+  fields:
+    - name: readme_heading
+      selectors: ['article.markdown-body h1', 'article.markdown-body h2', 'article.markdown-body']
+  collections:
+    - name: prompt_headings
+      root_selectors: ['article.markdown-body h2', 'article.markdown-body h3']
+      min_items: 1
+      limit: 3
+      fields:
+        - name: title
+          selectors: []
+  required_text_patterns: ['prompts.chat|Awesome ChatGPT Prompts']
+  min_selector_count: 1

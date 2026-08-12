@@ -1,5 +1,15 @@
 name: Find pip install command for browser-use
+source_id: browser_use_github
 task: Find the pip installation command for the browser-use repo
 judge_context:
   - The output must include the command ('pip install browser-use') 
 max_steps: 10
+keyless:
+  start_url: https://github.com/browser-use/browser-use
+  expected_domains: [github.com]
+  fields:
+    - name: installation_command
+      selectors: ['article.markdown-body', 'main', 'body']
+      pattern: 'pip install browser-use'
+  required_text_patterns: ['pip install browser-use']
+  min_selector_count: 1

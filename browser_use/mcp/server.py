@@ -16,7 +16,7 @@ Or as an MCP server in Claude Desktop or other MCP clients:
                 "command": "uvx",
                 "args": ["browser-use[cli]", "--mcp"],
                 "env": {
-                    "OPENAI_API_KEY": "sk-proj-1234567890",
+                    "BROWSER_USE_API_KEY": "...",
                 }
             }
         }
@@ -36,8 +36,6 @@ import logging
 import time
 from pathlib import Path
 from typing import Any
-
-from browser_use.llm import ChatAWSBedrock
 
 # Configure logging for MCP mode - redirect to stderr but preserve critical diagnostics
 logging.basicConfig(
@@ -94,7 +92,8 @@ from browser_use import ActionModel, Agent
 from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.config import get_default_llm, get_default_profile, load_browser_use_config
 from browser_use.filesystem.file_system import FileSystem
-from browser_use.llm.openai.chat import ChatOpenAI
+from browser_use.llm.base import BaseChatModel
+from browser_use.mcp.runtime import resolve_mcp_llm
 from browser_use.tools.service import Tools
 
 logger = logging.getLogger(__name__)
@@ -196,7 +195,7 @@ class BrowserUseServer:
 		self.agent: Agent | None = None
 		self.browser_session: BrowserSession | None = None
 		self.tools: Tools | None = None
-		self.llm: ChatOpenAI | None = None
+		self.llm: BaseChatModel | None = None
 		self.file_system: FileSystem | None = None
 		self._telemetry = ProductTelemetry()
 		self._start_time = time.time()
@@ -621,19 +620,12 @@ class BrowserUseServer:
 		# Create tools for direct actions
 		self.tools = Tools()
 
-		# Initialize LLM from config
-		llm_config = get_default_llm(self.config)
-		base_url = llm_config.get('base_url', None)
-		kwargs = {}
-		if base_url:
-			kwargs['base_url'] = base_url
-		if api_key := llm_config.get('api_key'):
-			self.llm = ChatOpenAI(
-				model=llm_config.get('model', 'gpt-o4-mini'),
-				api_key=api_key,
-				temperature=llm_config.get('temperature', 0.7),
-				**kwargs,
-			)
+		# Initialize extraction LLM when credentials are available. Direct browser
+		# control remains usable without an LLM and extraction retries resolution.
+		try:
+			self.llm = resolve_mcp_llm(get_default_llm(self.config))
+		except ValueError:
+			self.llm = None
 
 		# Initialize FileSystem for extraction actions
 		file_system_path = profile_config.get('file_system_path', '~/.browser-use-mcp')
@@ -652,43 +644,6 @@ class BrowserUseServer:
 		"""Run an autonomous agent task."""
 		logger.debug(f'Running agent task: {task}')
 
-		# Get LLM config
-		llm_config = get_default_llm(self.config)
-
-		# Get LLM provider
-		model_provider = llm_config.get('model_provider') or os.getenv('MODEL_PROVIDER')
-
-		# Get Bedrock-specific config
-		if model_provider and model_provider.lower() == 'bedrock':
-			llm_model = llm_config.get('model') or os.getenv('MODEL') or 'us.anthropic.claude-sonnet-4-20250514-v1:0'
-			aws_region = llm_config.get('region') or os.getenv('REGION')
-			if not aws_region:
-				aws_region = 'us-east-1'
-			aws_sso_auth = llm_config.get('aws_sso_auth', False)
-			llm = ChatAWSBedrock(
-				model=llm_model,  # or any Bedrock model
-				aws_region=aws_region,
-				aws_sso_auth=aws_sso_auth,
-			)
-		else:
-			api_key = llm_config.get('api_key') or os.getenv('OPENAI_API_KEY')
-			if not api_key:
-				return 'Error: OPENAI_API_KEY not set in config or environment'
-
-			# Use explicit model from tool call, otherwise fall back to configured default
-			llm_model = model or llm_config.get('model', 'gpt-4o')
-
-			base_url = llm_config.get('base_url', None)
-			kwargs = {}
-			if base_url:
-				kwargs['base_url'] = base_url
-			llm = ChatOpenAI(
-				model=llm_model,
-				api_key=api_key,
-				temperature=llm_config.get('temperature', 0.7),
-				**kwargs,
-			)
-
 		# Get profile config and merge with tool parameters
 		profile_config = get_default_profile(self.config)
 
@@ -701,6 +656,11 @@ class BrowserUseServer:
 
 		# Create browser profile using config
 		profile = BrowserProfile(**profile_config)
+
+		try:
+			llm = resolve_mcp_llm(get_default_llm(self.config), model_override=model)
+		except ValueError as error:
+			return f'Error: {error}'
 
 		# Create and run agent
 		agent = Agent(
@@ -990,7 +950,10 @@ class BrowserUseServer:
 	async def _extract_content(self, query: str, extract_links: bool = False) -> str:
 		"""Extract content from current page."""
 		if not self.llm:
-			return 'Error: LLM not initialized (set OPENAI_API_KEY)'
+			try:
+				self.llm = resolve_mcp_llm(get_default_llm(self.config))
+			except ValueError as error:
+				return f'Error: LLM not initialized ({error})'
 
 		if not self.file_system:
 			return 'Error: FileSystem not initialized'

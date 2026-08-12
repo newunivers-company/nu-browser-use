@@ -75,7 +75,7 @@ https://github.com/user-attachments/assets/93714c75-98f4-4cfc-add1-69c38b5138b5
 If you want to use Browser Use in your agent (Claude Code, Codex, Cursor, Hermes, OpenClaw, etc.), paste this prompt, and it sets everything up itself:
 
 ```text
-Install or upgrade browser-use to the latest stable version with uv using Python 3.12, run `browser-use skill install` to register the skill, and connect it to my browser. If setup or connection fails, follow https://github.com/browser-use/browser-harness/blob/main/install.md.
+Install or upgrade browser-use to the latest stable version with uv using Python 3.11, run `browser-use skill install` to register the skill, and connect it to my browser. If setup or connection fails, follow https://github.com/browser-use/browser-harness/blob/main/install.md.
 ```
 
 Then tell your agent what you want done.
@@ -123,7 +123,9 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-Check out the [library docs](https://docs.browser-use.com/open-source/introduction) and the [cloud docs](https://docs.cloud.browser-use.com?utm_source=github&utm_medium=readme-cloud-docs) for more!
+Check out the [library docs](https://docs.browser-use.com/open-source/introduction), the
+[generated configuration defaults](docs/configuration-defaults.md), and the
+[cloud docs](https://docs.cloud.browser-use.com?utm_source=github&utm_medium=readme-cloud-docs) for more!
 
 <br/>
 
@@ -203,6 +205,26 @@ agent = Agent(task='...', llm=llm)
 ```
 
 For the best speed and cost we still recommend the default `bu-*` models.
+</details>
+
+<details>
+<summary><b>Can I reuse a Codex, Claude, or Grok subscription login without an API key?</b></summary>
+
+Yes, for opt-in local development and evaluation. `ChatBrowserUse` remains the recommended production default, while
+`ChatSubscriptionCLI` invokes an already authenticated official CLI without reading its credential files or forwarding provider API-key
+environment variables. Codex can authenticate with a ChatGPT subscription; see the
+[official OpenAI authentication documentation](https://learn.chatgpt.com/docs/auth).
+
+```python
+from browser_use import Agent, ChatSubscriptionCLI
+from browser_use.llm.subscription_cli import SubscriptionCLIProvider
+
+llm = ChatSubscriptionCLI(provider_name=SubscriptionCLIProvider.CODEX)
+agent = Agent(task='...', llm=llm, use_vision=False)
+```
+
+The supported provider values are `codex`, `claude`, and `grok`. Run `codex login`, `claude auth login`, or `grok login --oauth` first.
+These coding-CLI adapters are text-only and are not intended for shared CI runners. Explicit `model=` values are forwarded verbatim.
 </details>
 
 <details>

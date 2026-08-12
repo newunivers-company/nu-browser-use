@@ -1,0 +1,24 @@
+name: Find the first DEV weekly top post
+source_id: dev_community
+task: Visit https://dev.to/top/week and return the title, author, and article URL of the first post shown in the weekly Top posts feed.
+judge_context:
+  - The result must use the first post card shown in the weekly Top feed, not a later post.
+  - The output must contain the post title, author, and article URL.
+max_steps: 10
+keyless:
+  start_url: https://dev.to/top/week
+  expected_domains: [dev.to]
+  collections:
+    - name: posts
+      root_selectors: ['.crayons-story[data-feed-content-id]', '.crayons-story']
+      min_items: 1
+      limit: 1
+      fields:
+        - name: title
+          selectors: ['h2 a', '.crayons-story__title a', 'a.crayons-story__hidden-navigation-link']
+        - name: author
+          selectors: ['a.crayons-story__secondary', '.profile-preview-card__trigger', '[data-testid="profile-preview-card-trigger"]']
+        - name: url
+          selectors: ['h2 a', '.crayons-story__title a', 'a.crayons-story__hidden-navigation-link']
+          attribute: href
+  min_selector_count: 1

@@ -44,6 +44,35 @@ class LocalBrowserWatchdog(BaseWatchdog):
 	_owns_browser_resources: bool = PrivateAttr(default=True)
 	_temp_dirs_to_cleanup: list[Path] = PrivateAttr(default_factory=list)
 	_original_user_data_dir: str | None = PrivateAttr(default=None)
+	_prepared_browser_path: str | None = PrivateAttr(default=None)
+	_browser_install_lock: asyncio.Lock = PrivateAttr(default_factory=asyncio.Lock)
+
+	async def prepare_browser_executable(self) -> str:
+		"""Resolve or install the local browser before browser launch events run.
+
+		Browser launch events deliberately have short timeouts because they should only
+		start a process and establish CDP connectivity. Browser installation can take
+		several minutes, so it must complete in this explicit bootstrap phase instead
+		of consuming the launch event's timeout budget.
+		"""
+		profile = self.browser_session.browser_profile
+		if profile.executable_path:
+			self._prepared_browser_path = str(profile.executable_path)
+			return self._prepared_browser_path
+
+		if self._prepared_browser_path and Path(self._prepared_browser_path).is_file():
+			return self._prepared_browser_path
+
+		async with self._browser_install_lock:
+			browser_path = self._find_installed_browser_path(channel=profile.channel)
+			if browser_path is None:
+				self.logger.warning(
+					'[LocalBrowserWatchdog] No local browser binary found; preparing Chromium before browser startup.'
+				)
+				browser_path = await self._install_browser_with_playwright()
+
+			self._prepared_browser_path = browser_path
+			return browser_path
 
 	@observe_debug(ignore_input=True, ignore_output=True, name='browser_launch_event')
 	async def on_BrowserLaunchEvent(self, event: BrowserLaunchEvent) -> BrowserLaunchResult:
@@ -104,6 +133,7 @@ class LocalBrowserWatchdog(BaseWatchdog):
 		self._temp_dirs_to_cleanup = []
 
 		for attempt in range(max_retries):
+			browser_process: asyncio.subprocess.Process | None = None
 			try:
 				# Get launch args from profile
 				launch_args = profile.get_args()
@@ -119,45 +149,40 @@ class LocalBrowserWatchdog(BaseWatchdog):
 					'User data dir must be set somewhere in launch args to a non-default path, otherwise Chrome will not let us attach via CDP'
 				)
 
-				# Get browser executable
-				# Priority: custom executable > fallback paths > playwright subprocess
+				# Get a browser executable prepared before BrowserLaunchEvent dispatch.
 				if profile.executable_path:
-					browser_path = profile.executable_path
+					browser_path = str(profile.executable_path)
 					self.logger.debug(f'[LocalBrowserWatchdog] 📦 Using custom local browser executable_path= {browser_path}')
 				else:
-					# self.logger.debug('[LocalBrowserWatchdog] 🔍 Looking for local browser binary path...')
-					# Try fallback paths first (Playwright's Chromium preferred by default)
-					browser_path = self._find_installed_browser_path(channel=profile.channel)
-					if not browser_path:
-						self.logger.error(
-							'[LocalBrowserWatchdog] ⚠️ No local browser binary found, installing browser using playwright subprocess...'
-						)
-						browser_path = await self._install_browser_with_playwright()
+					browser_path = self._prepared_browser_path or self._find_installed_browser_path(channel=profile.channel)
 
 				self.logger.debug(f'[LocalBrowserWatchdog] 📦 Found local browser installed at executable_path= {browser_path}')
 				if not browser_path:
-					raise RuntimeError('No local Chrome/Chromium install found, and failed to install with playwright')
+					raise RuntimeError(
+						'No prepared local Chrome/Chromium installation found. '
+						'Call BrowserSession.start() so the browser bootstrap can complete before launch.'
+					)
 
 				# Launch browser subprocess directly
 				self.logger.debug(f'[LocalBrowserWatchdog] 🚀 Launching browser subprocess with {len(launch_args)} args...')
 				self.logger.debug(
 					f'[LocalBrowserWatchdog] 📂 user_data_dir={profile.user_data_dir}, profile_directory={profile.profile_directory}'
 				)
-				subprocess = await asyncio.create_subprocess_exec(
+				browser_process = await asyncio.create_subprocess_exec(
 					browser_path,
 					*launch_args,
 					stdout=asyncio.subprocess.PIPE,
 					stderr=asyncio.subprocess.PIPE,
 				)
 				self.logger.debug(
-					f'[LocalBrowserWatchdog] 🎭 Browser running with browser_pid= {subprocess.pid} 🔗 listening on CDP port :{debug_port}'
+					f'[LocalBrowserWatchdog] 🎭 Browser running with browser_pid= {browser_process.pid} 🔗 listening on CDP port :{debug_port}'
 				)
 
-				# Convert to psutil.Process
-				process = psutil.Process(subprocess.pid)
-
 				# Wait for CDP to be ready and get the URL
-				cdp_url = await self._wait_for_cdp_url(debug_port)
+				cdp_url = await self._wait_for_cdp_url(debug_port, browser_process)
+
+				# Convert to psutil.Process only after launch succeeded.
+				process = psutil.Process(browser_process.pid)
 
 				# Success! Clean up only the temp dirs we created but didn't use
 				currently_used_dir = str(profile.user_data_dir)
@@ -177,7 +202,13 @@ class LocalBrowserWatchdog(BaseWatchdog):
 
 				return process, cdp_url
 
+			except asyncio.CancelledError:
+				if browser_process is not None:
+					await self._cleanup_browser_subprocess(browser_process)
+				raise
 			except Exception as e:
+				if browser_process is not None:
+					await self._cleanup_browser_subprocess(browser_process)
 				error_str = str(e).lower()
 
 				# Check if this is a user_data_dir related error
@@ -358,7 +389,7 @@ class LocalBrowserWatchdog(BaseWatchdog):
 		return None
 
 	async def _install_browser_with_playwright(self) -> str:
-		"""Get browser executable path from playwright in a subprocess to avoid thread issues."""
+		"""Install Chromium outside event processing and return its executable path."""
 		import platform
 
 		# Build command - only use --with-deps on Linux (it fails on Windows/macOS)
@@ -374,7 +405,7 @@ class LocalBrowserWatchdog(BaseWatchdog):
 		)
 
 		try:
-			stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=60.0)
+			stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=300.0)
 			self.logger.debug(f'[LocalBrowserWatchdog] 📦 Playwright install output: {stdout}')
 			browser_path = self._find_installed_browser_path()
 			if browser_path:
@@ -385,7 +416,7 @@ class LocalBrowserWatchdog(BaseWatchdog):
 			# Kill the subprocess if it times out
 			process.kill()
 			await process.wait()
-			raise RuntimeError('Timeout getting browser path from playwright')
+			raise RuntimeError('Timed out after 300 seconds while installing Chromium with Playwright')
 		except Exception as e:
 			# Make sure subprocess is terminated
 			if process.returncode is None:
@@ -405,13 +436,26 @@ class LocalBrowserWatchdog(BaseWatchdog):
 		return port
 
 	@staticmethod
-	async def _wait_for_cdp_url(port: int, timeout: float = 30) -> str:
-		"""Wait for the browser to start and return the CDP URL."""
+	async def _wait_for_cdp_url(port: int, browser_process: asyncio.subprocess.Process, timeout: float = 20) -> str:
+		"""Wait for CDP readiness while surfacing early browser process failures."""
 		import aiohttp
 
 		start_time = asyncio.get_event_loop().time()
 
 		while asyncio.get_event_loop().time() - start_time < timeout:
+			if browser_process.returncode is not None:
+				stdout, stderr = await browser_process.communicate()
+				full_diagnostic_output = (stderr or stdout or b'').decode(errors='replace').strip()
+				diagnostic_output = LocalBrowserWatchdog._bounded_diagnostic_output(full_diagnostic_output)
+				sandbox_hint = ''
+				if 'No usable sandbox' in full_diagnostic_output:
+					sandbox_hint = (
+						' Set chromium_sandbox=False only in a trusted environment that cannot use Chromium sandboxing.'
+					)
+				raise RuntimeError(
+					f'Browser process exited before CDP was ready (code {browser_process.returncode}).'
+					f'{sandbox_hint} Browser stderr: {diagnostic_output or "<empty>"}'
+				)
 			try:
 				async with aiohttp.ClientSession() as session:
 					async with session.get(f'http://127.0.0.1:{port}/json/version') as resp:
@@ -426,6 +470,38 @@ class LocalBrowserWatchdog(BaseWatchdog):
 				await asyncio.sleep(0.1)
 
 		raise TimeoutError(f'Browser did not start within {timeout} seconds')
+
+	@staticmethod
+	def _bounded_diagnostic_output(diagnostic_output: str, limit: int = 2000) -> str:
+		"""Bound subprocess diagnostics while retaining their actionable head and tail."""
+		if len(diagnostic_output) <= limit:
+			return diagnostic_output
+		separator = '\n... [diagnostic output truncated] ...\n'
+		head_length = (limit - len(separator)) // 2
+		tail_length = limit - len(separator) - head_length
+		return f'{diagnostic_output[:head_length]}{separator}{diagnostic_output[-tail_length:]}'
+
+	@staticmethod
+	async def _cleanup_browser_subprocess(browser_process: asyncio.subprocess.Process) -> None:
+		"""Terminate and reap a just-launched browser that never became usable."""
+		if browser_process.returncode is not None:
+			await browser_process.wait()
+			return
+
+		try:
+			browser_process.terminate()
+		except ProcessLookupError:
+			await browser_process.wait()
+			return
+
+		try:
+			await asyncio.wait_for(browser_process.wait(), timeout=5)
+		except TimeoutError:
+			try:
+				browser_process.kill()
+			except ProcessLookupError:
+				pass
+			await browser_process.wait()
 
 	@staticmethod
 	async def _cleanup_process(process: psutil.Process) -> None:

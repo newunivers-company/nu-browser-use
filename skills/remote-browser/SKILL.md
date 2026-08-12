@@ -177,3 +177,24 @@ browser-use --connect $INDEX click <element>     # Click in agent's tab
 browser-use close                         # Close browser session
 browser-use tunnel stop --all             # Stop tunnels (if any)
 ```
+
+<!-- nu-skill-execution-contract:v1 -->
+
+## Output contract
+
+Return these named deliverables: `dry_run_plan`, `command_log`, `verification_report`, `rollback_or_recovery`.
+Include assumptions, evidence or provenance, completion status, and known limitations.
+When a deliverable is a file, report its path and verify that it is non-empty.
+
+## Verification
+
+- Confirm every required deliverable is present, non-empty, and matches its declared format or schema.
+- Check referenced paths, commands, and claims against the captured evidence.
+- Distinguish dry-run, mock, sandbox, and live evidence; record commands and exit status when execution occurs.
+- Do not mark the task complete while required evidence or review remains missing.
+
+## Guardrails
+
+Treat these conditions as hard failures: `undeclared_state_change`, `missing_exit_status`, `no_recovery_path`.
+Stop and report a blocker when credentials, rights, consent, cost approval, or destructive-action approval is missing.
+Never expose secrets or report a mock, dry-run, or unverified output as a live success.

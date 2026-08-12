@@ -1,7 +1,33 @@
 name: Amazon Laptop Search
+source_id: amazon
 task: Go to amazon.com, search for 'laptop', and return the first result
 judge_context:
   - The agent must navigate to amazon.com
   - The agent must search for 'laptop'
   - The agent must return name of the first laptop 
 max_steps: 10
+keyless:
+  start_url: https://www.amazon.com/
+  expected_domains: [amazon.com]
+  actions:
+    - action: fill
+      selectors: ['#twotabsearchtextbox', 'input[name="field-keywords"]', 'input[type="search"]']
+      value: laptop
+      wait_after_seconds: 0.2
+    - action: click
+      selectors: ['#nav-search-submit-button', 'input[type="submit"]']
+      fallback_url: https://www.amazon.com/s?k=laptop
+      wait_after_seconds: 2
+  collections:
+    - name: results
+      root_selectors: ['div[data-component-type="s-search-result"]', 'div[data-asin]:not([data-asin=""])']
+      min_items: 1
+      limit: 1
+      fields:
+        - name: title
+          selectors: ['h2 span', 'h2']
+        - name: url
+          selectors: ['h2 a', 'a.a-link-normal']
+          attribute: href
+  required_text_patterns: ['laptop']
+  min_selector_count: 1

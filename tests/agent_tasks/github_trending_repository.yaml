@@ -1,0 +1,23 @@
+name: Find the top GitHub Trending repository
+source_id: github_trending
+task: Visit https://github.com/trending and return the owner/repository name and repository URL of the first repository in the Trending list.
+judge_context:
+  - The result must come from the first repository card under GitHub Trending.
+  - The output must contain both the owner/repository name and its GitHub URL.
+max_steps: 10
+keyless:
+  start_url: https://github.com/trending
+  expected_domains: [github.com]
+  collections:
+    - name: repositories
+      root_selectors: ['article.Box-row']
+      min_items: 1
+      limit: 1
+      fields:
+        - name: repository
+          selectors: ['h2 a']
+        - name: url
+          selectors: ['h2 a']
+          attribute: href
+  required_text_patterns: ['Trending']
+  min_selector_count: 1
