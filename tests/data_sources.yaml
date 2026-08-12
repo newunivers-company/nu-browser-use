@@ -9,6 +9,13 @@ sources:
     test_level: behavioral
     expected_http_statuses: [200, 403, 503]
     description: Product search workflow with common commerce anti-bot behavior.
+    browser_contract:
+      allowed_final_path_prefixes: [/s]
+      expected_title_markers: [laptop]
+      required_content_markers: [laptop]
+      minimum_visible_text_chars: 100
+      minimum_meaningful_elements: 10
+      minimum_interactive_elements: 5
 
   - id: browser_use_github
     name: Browser Use GitHub Repository
@@ -99,6 +106,13 @@ sources:
     test_level: behavioral
     expected_http_statuses: [200]
     description: Public federated timeline and trending content.
+    browser_contract:
+      allowed_final_path_prefixes: [/explore]
+      expected_title_markers: [mastodon]
+      required_content_markers: [Mastodon]
+      minimum_visible_text_chars: 100
+      minimum_meaningful_elements: 5
+      minimum_interactive_elements: 2
 
   - id: bluesky_discover
     name: Bluesky
@@ -117,6 +131,13 @@ sources:
     test_level: availability
     expected_http_statuses: [200, 429]
     description: Region-sensitive trending video feed.
+    browser_contract:
+      allowed_final_path_prefixes: [/feed/trending]
+      expected_title_markers: [YouTube]
+      required_content_markers: [Trending]
+      minimum_visible_text_chars: 100
+      minimum_meaningful_elements: 5
+      minimum_interactive_elements: 2
 
   - id: medium_ai
     name: Medium Artificial Intelligence Tag
@@ -135,6 +156,13 @@ sources:
     test_level: availability
     expected_http_statuses: [200, 403]
     description: Community-ranked product launches.
+    browser_contract:
+      allowed_final_path_prefixes: [/]
+      expected_title_markers: [Product Hunt]
+      required_content_markers: [Product Hunt]
+      minimum_visible_text_chars: 100
+      minimum_meaningful_elements: 5
+      minimum_interactive_elements: 2
 
   - id: stack_overflow_hot
     name: Stack Overflow Hot Questions
@@ -144,6 +172,13 @@ sources:
     test_level: availability
     expected_http_statuses: [200, 403, 429]
     description: Ranked technical question feed with bot protection.
+    browser_contract:
+      allowed_final_path_prefixes: [/questions]
+      expected_title_markers: [Stack Overflow]
+      required_content_markers: [Questions]
+      minimum_visible_text_chars: 100
+      minimum_meaningful_elements: 5
+      minimum_interactive_elements: 2
 
   - id: x_explore
     name: X Explore
@@ -189,6 +224,13 @@ sources:
     test_level: availability
     expected_http_statuses: [200, 403, 429]
     description: JavaScript video discovery page with bot controls.
+    browser_contract:
+      allowed_final_path_prefixes: [/explore]
+      expected_title_markers: [TikTok]
+      required_content_markers: [Explore]
+      minimum_visible_text_chars: 100
+      minimum_meaningful_elements: 5
+      minimum_interactive_elements: 2
 
   - id: pinterest_explore
     name: Pinterest Ideas
@@ -207,6 +249,13 @@ sources:
     test_level: availability
     expected_http_statuses: [200, 403]
     description: Public community-server discovery surface.
+    browser_contract:
+      allowed_final_path_prefixes: [/servers]
+      expected_title_markers: [Discord]
+      required_content_markers: [Discover]
+      minimum_visible_text_chars: 100
+      minimum_meaningful_elements: 5
+      minimum_interactive_elements: 2
 
   - id: linkedin_feed
     name: LinkedIn Feed
@@ -387,6 +436,13 @@ sources:
     test_level: availability
     expected_http_statuses: [200, 403]
     description: Prompt repository with authentication-dependent actions.
+    browser_contract:
+      allowed_final_path_prefixes: [/hub]
+      expected_title_markers: [LangSmith]
+      required_content_markers: [LangSmith]
+      minimum_visible_text_chars: 100
+      minimum_meaningful_elements: 3
+      minimum_interactive_elements: 1
 
   - id: aiprm_prompts
     name: AIPRM Prompts

@@ -21,13 +21,14 @@ These values come directly from the public Python API and are checked by pre-com
 | `Agent(..., llm_timeout=...)` | `None` |
 | `Agent(..., step_timeout=...)` | `180` |
 | `Agent(..., final_response_after_failure=...)` | `True` |
+| `Agent(..., require_live_evidence=...)` | `None` |
 | `Agent(..., message_compaction=...)` | `True` |
 | `Agent(..., enable_planning=...)` | `True` |
 | `Agent(..., directly_open_url=...)` | `True` |
 | `Agent(..., context=...)` | `None` |
 | `Agent.run(max_steps=...)` | `500` |
 
-`llm_timeout=None` means the timeout is selected from the model family. When no LLM is supplied or configured, `ChatBrowserUse()` is used.
+`llm_timeout=None` means the timeout is selected from the model family. When no LLM is supplied or configured, the keyless runtime selects an authenticated Codex, Claude, or Grok CLI, then an explicitly configured local model.
 
 ## Browser
 

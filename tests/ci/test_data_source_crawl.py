@@ -21,6 +21,7 @@ from scripts.crawl_data_sources import (
 	evaluate_crawl_quality_gate,
 	extract_html_metrics,
 	fetch_bounded_url,
+	fetch_crawl_page,
 	normalize_crawl_url,
 	rank_discovered_urls,
 	select_crawl_sources,
@@ -360,6 +361,28 @@ async def test_bounded_fetch_blocks_cross_origin_redirect_and_records_truncation
 	assert truncated.content == b'x' * 10
 	assert truncated.content_truncated is True
 	assert truncated.declared_content_length == 20
+
+
+async def test_truncated_html_is_inconclusive_instead_of_content_or_shell() -> None:
+	"""Do not make semantic page-quality decisions from a bounded HTML prefix."""
+	content = b'<html><body>' + (b'useful content ' * 100) + b'</body></html>'
+
+	def handle_request(request: httpx.Request) -> httpx.Response:
+		return httpx.Response(200, content=content, headers={'content-type': 'text/html'}, request=request)
+
+	async with httpx.AsyncClient(transport=httpx.MockTransport(handle_request)) as client:
+		page = await fetch_crawl_page(
+			'https://example.com/content',
+			0,
+			client,
+			HostRateLimiter(0),
+			100,
+			safety_validator=UrlSafetyValidator(allow_private_networks=True),
+		)
+
+	assert page.content_truncated is True
+	assert page.content_sha256_scope == 'prefix'
+	assert page.classification == CrawlClassification.TRUNCATED_HTML
 
 
 async def test_crawl_source_applies_robots_policy_to_every_queued_url() -> None:

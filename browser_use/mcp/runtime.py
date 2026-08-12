@@ -67,15 +67,8 @@ def resolve_mcp_llm(llm_config: Mapping[str, Any], model_override: str | None = 
 		)
 
 	if model_override:
-		browser_use_api_key = os.getenv('BROWSER_USE_API_KEY')
-		if browser_use_api_key:
-			from browser_use import ChatBrowserUse
+		from browser_use.runtime import resolve_runtime_llm
 
-			return ChatBrowserUse(model=model_override, api_key=browser_use_api_key)
-
-		raise ValueError(
-			'A model override requires BROWSER_USE_API_KEY or explicit provider credentials. '
-			'Use a provider-prefixed Browser Use gateway model ID when using BROWSER_USE_API_KEY.'
-		)
+		return resolve_runtime_llm(model_override=model_override)
 
 	return resolve_default_llm(None)

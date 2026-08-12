@@ -27,6 +27,7 @@ T = TypeVar('T', bound=BaseModel)
 
 _API_KEY_ENVIRONMENT_VARIABLES = (
 	'ANTHROPIC_API_KEY',
+	'BROWSER_USE_API_KEY',
 	'GROK_API_KEY',
 	'OPENAI_API_KEY',
 	'XAI_API_KEY',
@@ -198,6 +199,30 @@ def _extract_generic_envelope(payload: Any) -> Any:
 	return payload
 
 
+def _remove_json_schema_formats(value: Any) -> None:
+	"""Remove advisory formats rejected by Codex while preserving Pydantic validation after inference."""
+	if isinstance(value, dict):
+		value.pop('format', None)
+		for nested_value in value.values():
+			_remove_json_schema_formats(nested_value)
+	elif isinstance(value, list):
+		for item in value:
+			_remove_json_schema_formats(item)
+
+
+def _provider_compatible_schema(
+	provider: SubscriptionCLIProvider,
+	output_format: type[BaseModel] | None,
+) -> dict[str, Any] | None:
+	"""Return a strict schema accepted by the selected official subscription CLI."""
+	if output_format is None:
+		return None
+	schema = SchemaOptimizer.create_optimized_json_schema(output_format)
+	if provider == SubscriptionCLIProvider.CODEX:
+		_remove_json_schema_formats(schema)
+	return schema
+
+
 async def inspect_subscription_cli(
 	provider: SubscriptionCLIProvider,
 	*,
@@ -312,6 +337,11 @@ class ChatSubscriptionCLI(BaseChatModel):
 		"""Return the explicit model name or the CLI-owned default label."""
 		return self.model
 
+	@property
+	def supports_vision(self) -> bool:
+		"""Declare that official subscription CLI transports currently accept text only."""
+		return False
+
 	def _resolve_executable(self) -> str:
 		"""Resolve the configured CLI executable or raise an actionable error."""
 		executable_path = self.executable or shutil.which(self.provider_name.value)
@@ -327,7 +357,7 @@ class ChatSubscriptionCLI(BaseChatModel):
 		output_format: type[BaseModel] | None,
 	) -> tuple[list[str], Path | None, Path | None]:
 		"""Build provider-specific safe, non-interactive CLI arguments."""
-		schema = SchemaOptimizer.create_optimized_json_schema(output_format) if output_format is not None else None
+		schema = _provider_compatible_schema(self.provider_name, output_format)
 		if self.provider_name == SubscriptionCLIProvider.CODEX:
 			result_path = temporary_directory / 'final-response.txt'
 			arguments = [

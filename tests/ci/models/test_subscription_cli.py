@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, HttpUrl
 
 from browser_use.llm.messages import ContentPartImageParam, ImageURL, UserMessage
 from browser_use.llm.subscription_cli import (
@@ -24,6 +24,12 @@ class StructuredAnswer(BaseModel):
 	status: str
 
 
+class UrlAnswer(BaseModel):
+	"""Structured URL payload whose Pydantic schema includes an advisory URI format."""
+
+	url: HttpUrl
+
+
 def process_result(*, stdout: str = '', stderr: str = '', returncode: int = 0) -> SubscriptionCLIProcessResult:
 	"""Build a bounded fake CLI process result."""
 	return SubscriptionCLIProcessResult(returncode=returncode, stdout=stdout, stderr=stderr, duration_ms=1)
@@ -31,12 +37,13 @@ def process_result(*, stdout: str = '', stderr: str = '', returncode: int = 0) -
 
 def test_subscription_environment_removes_all_supported_api_keys(monkeypatch: pytest.MonkeyPatch) -> None:
 	"""Official CLIs must use stored subscriptions even when API keys exist in the parent."""
-	for variable_name in ('OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'XAI_API_KEY', 'GROK_API_KEY'):
+	api_key_variables = ('OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'XAI_API_KEY', 'GROK_API_KEY', 'BROWSER_USE_API_KEY')
+	for variable_name in api_key_variables:
 		monkeypatch.setenv(variable_name, 'must-not-be-forwarded')
 
 	environment = _subscription_environment()
 
-	assert not {'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'XAI_API_KEY', 'GROK_API_KEY'} & environment.keys()
+	assert not set(api_key_variables) & environment.keys()
 
 
 @pytest.mark.parametrize(
@@ -76,6 +83,28 @@ def test_cli_arguments_are_noninteractive_and_preserve_explicit_model(
 	if provider == SubscriptionCLIProvider.CODEX:
 		schema_path = Path(arguments[arguments.index('--output-schema') + 1])
 		assert json.loads(schema_path.read_text(encoding='utf-8'))['additionalProperties'] is False
+
+
+def test_codex_schema_removes_unsupported_uri_format_but_keeps_pydantic_validation(tmp_path: Path) -> None:
+	"""Codex output schemas omit unsupported formats while parsed results remain strongly validated."""
+	llm = ChatSubscriptionCLI(provider_name=SubscriptionCLIProvider.CODEX)
+	arguments, result_path, _prompt_path = llm._build_arguments(
+		executable_path='/usr/bin/codex',
+		temporary_directory=tmp_path,
+		output_format=UrlAnswer,
+	)
+	schema_path = Path(arguments[arguments.index('--output-schema') + 1])
+	schema = json.loads(schema_path.read_text(encoding='utf-8'))
+
+	assert '"format":' not in json.dumps(schema)
+	assert result_path is not None
+	result_path.write_text('{"url":"https://example.com/path"}', encoding='utf-8')
+	completion = llm._parse_completion(
+		result=process_result(),
+		result_path=result_path,
+		output_format=UrlAnswer,
+	)
+	assert str(completion.url) == 'https://example.com/path'
 
 
 async def test_authentication_inspection_uses_sanitized_official_statuses(

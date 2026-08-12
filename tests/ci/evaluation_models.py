@@ -12,10 +12,39 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
+class EvaluationBrowserOptions(BaseModel):
+	"""Validated browser runtime shared by every evaluation mode."""
+
+	model_config = ConfigDict(extra='forbid')
+
+	disable_sandbox: bool = False
+	executable_path: Path | None = None
+	use_cloud_browser: bool = False
+	cloud_profile_id: str | None = None
+	cloud_proxy_country_code: str | None = None
+	cloud_timeout_minutes: int | None = Field(default=None, ge=1, le=240)
+	minimum_page_load_wait_seconds: float = Field(default=1.0, ge=0, le=10)
+	network_idle_wait_seconds: float = Field(default=1.0, ge=0, le=10)
+
+	@model_validator(mode='after')
+	def validate_browser_runtime(self) -> EvaluationBrowserOptions:
+		"""Reject local/cloud combinations that cannot represent one browser runtime."""
+		if self.use_cloud_browser and self.executable_path is not None:
+			raise ValueError('executable_path cannot be combined with use_cloud_browser')
+		if self.use_cloud_browser and self.disable_sandbox:
+			raise ValueError('disable_sandbox is a local-browser option and cannot be combined with use_cloud_browser')
+		if not self.use_cloud_browser and any(
+			value is not None for value in (self.cloud_profile_id, self.cloud_proxy_country_code, self.cloud_timeout_minutes)
+		):
+			raise ValueError('cloud browser options require use_cloud_browser=True')
+		return self
+
+
 class EvaluationMode(StrEnum):
 	"""Supported levels of browser-agent evaluation."""
 
 	AUTO = 'auto'
+	HYBRID = 'hybrid'
 	DETERMINISTIC = 'deterministic'
 	REPLAY = 'replay'
 	LOCAL = 'local'
@@ -177,7 +206,7 @@ class EvaluationResult(BaseModel):
 	file: str
 	status: Literal['passed', 'failed', 'skipped']
 	explanation: str
-	mode: EvaluationMode = EvaluationMode.CLOUD
+	mode: EvaluationMode = EvaluationMode.HYBRID
 	reason_code: EvaluationReasonCode = EvaluationReasonCode.COMPLETED
 	source_id: str | None = None
 	duration_ms: int = Field(default=0, ge=0)
@@ -195,7 +224,7 @@ class EvaluationResult(BaseModel):
 class EvaluationSummary(BaseModel):
 	"""Aggregate evaluation score and quality-gate inputs."""
 
-	mode: EvaluationMode = EvaluationMode.CLOUD
+	mode: EvaluationMode = EvaluationMode.HYBRID
 	passed: int
 	failed: int
 	skipped: int

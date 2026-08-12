@@ -12,11 +12,13 @@ from typing import Literal
 from urllib.parse import urlsplit
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
+from browser_use.browser.cloud.views import CloudBrowserParams
 from browser_use.browser.profile import BrowserProfile
 from browser_use.browser.session import BrowserSession
 from tests.ci.evaluation_models import (
+	EvaluationBrowserOptions,
 	EvaluationMode,
 	EvaluationReasonCode,
 	EvaluationResult,
@@ -31,18 +33,63 @@ from tests.ci.evaluation_models import (
 ANTI_BOT_TITLE_MARKERS = ('access denied', 'attention required', 'just a moment', 'request blocked')
 
 
-class KeylessRunnerOptions(BaseModel):
+class KeylessRunnerOptions(EvaluationBrowserOptions):
 	"""Validated resource and retry controls for deterministic browser evaluations."""
 
 	model_config = ConfigDict(extra='forbid')
 
-	disable_sandbox: bool = False
 	launch_timeout_seconds: float = Field(default=30.0, gt=0, le=120)
 	navigation_timeout_seconds: float = Field(default=45.0, gt=0, le=180)
 	state_timeout_seconds: float = Field(default=45.0, ge=35.0, le=180)
-	shutdown_timeout_seconds: float = Field(default=45.0, ge=35.0, le=180)
+	shutdown_timeout_seconds: float = Field(default=15.0, ge=1.0, le=180)
 	attempts: int = Field(default=2, ge=1, le=3)
 	retry_delay_seconds: float = Field(default=2.0, ge=0, le=30)
+	required_stable_states: int = Field(default=2, ge=1, le=5)
+	state_stability_tolerance: float = Field(default=0.2, ge=0, le=1)
+	state_retry_delay_seconds: float = Field(default=1.0, ge=0, le=10)
+
+
+def build_evaluation_browser_profile(
+	options: EvaluationBrowserOptions,
+	profile_directory: Path | None,
+) -> BrowserProfile:
+	"""Build one local or cloud profile shared by deterministic and model evaluations."""
+	common_options = {
+		'headless': True,
+		'keep_alive': False,
+		'enable_default_extensions': False,
+		'minimum_wait_page_load_time': options.minimum_page_load_wait_seconds,
+		'wait_for_network_idle_page_load_time': options.network_idle_wait_seconds,
+	}
+	if options.use_cloud_browser:
+		return BrowserProfile(
+			**common_options,
+			use_cloud=True,
+			cloud_browser_params=CloudBrowserParams(
+				cloud_profile_id=options.cloud_profile_id,
+				cloud_proxy_country_code=options.cloud_proxy_country_code,
+				cloud_timeout=options.cloud_timeout_minutes,
+			),
+		)
+	return BrowserProfile(
+		**common_options,
+		user_data_dir=profile_directory,
+		executable_path=options.executable_path,
+		chromium_sandbox=not options.disable_sandbox,
+	)
+
+
+async def close_browser_session(session: BrowserSession | None, timeout_seconds: float) -> None:
+	"""Best-effort bounded cleanup for fully or partially started browser sessions."""
+	if session is None:
+		return
+	try:
+		await asyncio.wait_for(session.kill(), timeout=timeout_seconds)
+	except Exception:
+		try:
+			await asyncio.wait_for(session.reset(), timeout=min(timeout_seconds, 5.0))
+		except Exception:
+			pass
 
 
 def load_evaluation_task(task_path: str | Path) -> EvaluationTask:
@@ -194,29 +241,59 @@ def _is_nonempty(value: object) -> bool:
 async def _capture_state(
 	session: BrowserSession,
 	task: EvaluationTask,
-	state_timeout_seconds: float,
+	options: KeylessRunnerOptions,
 ) -> tuple[str, str, int, str]:
-	"""Capture final URL, title, selector count, and bounded page text with retries."""
+	"""Capture consecutive stable URL, title, DOM, and text evidence with retries."""
+	if options.required_stable_states > task.keyless.state_attempts:
+		raise ValueError('required_stable_states must not exceed the task state_attempts')
 	contract = task.keyless
 	last_error: Exception | None = None
+	previous_evidence: tuple[str, str, int, int] | None = None
+	stable_states = 0
 	for attempt in range(contract.state_attempts):
 		try:
 			state = await asyncio.wait_for(
 				session.get_browser_state_summary(include_screenshot=False),
-				timeout=state_timeout_seconds,
+				timeout=options.state_timeout_seconds,
 			)
 			direct_url = str(await _evaluate_value(session, 'location.href') or state.url)
 			direct_title = str(await _evaluate_value(session, 'document.title') or state.title)
 			body_text = str(await _evaluate_value(session, "document.body ? document.body.innerText.slice(0, 500000) : ''") or '')
 			if direct_title and direct_url and direct_url != 'about:blank':
-				return direct_url, direct_title, len(state.dom_state.selector_map), body_text
+				last_error = None
+				selector_count = len(state.dom_state.selector_map)
+				current_evidence = (direct_url, direct_title, selector_count, len(body_text))
+				if previous_evidence is None:
+					stable_states = 1
+				else:
+					previous_url, previous_title, previous_selectors, previous_text_chars = previous_evidence
+					selector_delta = abs(selector_count - previous_selectors) / max(previous_selectors, 1)
+					text_delta = abs(len(body_text) - previous_text_chars) / max(previous_text_chars, 1)
+					stable = (
+						direct_url == previous_url
+						and direct_title == previous_title
+						and selector_delta <= options.state_stability_tolerance
+						and text_delta <= options.state_stability_tolerance
+					)
+					stable_states = stable_states + 1 if stable else 1
+				previous_evidence = current_evidence
+				if stable_states >= options.required_stable_states:
+					return direct_url, direct_title, selector_count, body_text
+			else:
+				previous_evidence = None
+				stable_states = 0
 		except Exception as error:
 			last_error = error
+			previous_evidence = None
+			stable_states = 0
 		if attempt + 1 < contract.state_attempts:
-			await asyncio.sleep(1.5)
+			await asyncio.sleep(options.state_retry_delay_seconds)
 	if last_error:
 		raise last_error
-	raise RuntimeError('page state remained empty after all capture attempts')
+	raise RuntimeError(
+		f'page state did not reach {options.required_stable_states} consecutive stable captures '
+		f'within {contract.state_attempts} attempts'
+	)
 
 
 async def _run_keyless_attempt(
@@ -232,20 +309,16 @@ async def _run_keyless_attempt(
 
 	with tempfile.TemporaryDirectory(prefix=f'nu-keyless-eval-{task.source_id}-') as profile_directory:
 		try:
-			profile = BrowserProfile(
-				headless=True,
-				user_data_dir=Path(profile_directory),
-				keep_alive=False,
-				enable_default_extensions=False,
-				chromium_sandbox=not options.disable_sandbox,
-			)
+			profile = build_evaluation_browser_profile(options, Path(profile_directory))
 			session = BrowserSession(browser_profile=profile)
 			await asyncio.wait_for(session.start(), timeout=options.launch_timeout_seconds)
 		except Exception as error:
+			await close_browser_session(session, min(options.shutdown_timeout_seconds, 10.0))
+			diagnostic = ' '.join(str(error).splitlines())[:2000]
 			return EvaluationResult(
 				file=task_file,
 				status='skipped',
-				explanation=f'Browser unavailable before navigation: {type(error).__name__}: {error}',
+				explanation=f'Browser unavailable before navigation: {type(error).__name__}: {diagnostic}',
 				mode=EvaluationMode.DETERMINISTIC,
 				reason_code=EvaluationReasonCode.BROWSER_UNAVAILABLE,
 				source_id=task.source_id,
@@ -273,11 +346,7 @@ async def _run_keyless_attempt(
 				if not succeeded and not action.optional:
 					raise RuntimeError(f'required action failed: {detail}')
 
-			final_url, title, selector_count, body_text = await _capture_state(
-				session,
-				task,
-				options.state_timeout_seconds,
-			)
+			final_url, title, selector_count, body_text = await _capture_state(session, task, options)
 			hostname = (urlsplit(final_url).hostname or '').casefold()
 			domain_passed = any(
 				hostname == domain.casefold() or hostname.endswith(f'.{domain.casefold()}')
@@ -414,11 +483,7 @@ async def _run_keyless_attempt(
 				trace=trace,
 			)
 		finally:
-			if session is not None:
-				try:
-					await asyncio.wait_for(session.kill(), timeout=options.shutdown_timeout_seconds)
-				except Exception:
-					pass
+			await close_browser_session(session, options.shutdown_timeout_seconds)
 
 
 async def run_keyless_task(

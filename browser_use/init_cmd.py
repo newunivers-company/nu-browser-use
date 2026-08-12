@@ -425,12 +425,9 @@ def main(
 			next_steps.append('   uv init\n\n', style='dim')
 			next_steps.append('3. Install browser-use:\n', style='bold')
 			next_steps.append('   uv add browser-use\n\n', style='dim')
-			next_steps.append('4. Set up your API key in .env file or environment:\n', style='bold')
-			next_steps.append('   BROWSER_USE_API_KEY=your-key\n', style='dim')
-			next_steps.append(
-				'   (Get your key at https://cloud.browser-use.com/dashboard/settings?tab=api-keys&new&utm_source=oss&utm_medium=cli)\n\n',
-				style='dim italic',
-			)
+			next_steps.append('4. Configure a keyless model runtime:\n', style='bold')
+			next_steps.append('   codex login\n', style='dim')
+			next_steps.append('   # Or set KEYLESS_LLM_MODEL to an installed local model name.\n\n', style='dim italic')
 			next_steps.append('5. Run your script:\n', style='bold')
 			next_steps.append(f'   uv run {output_path.name}\n', style='dim')
 

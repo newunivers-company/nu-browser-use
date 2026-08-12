@@ -200,6 +200,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		include_recent_events: bool = False,
 		sample_images: list[ContentPartTextParam | ContentPartImageParam] | None = None,
 		final_response_after_failure: bool = True,
+		require_live_evidence: bool | None = None,
+		evidence_minimum_matching_terms: int = 2,
 		enable_planning: bool = True,
 		planning_replan_on_stall: int = 3,
 		planning_exploration_limit: int = 5,
@@ -226,6 +228,11 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				raise ValueError('llm_screenshot_size dimensions must be at least 100 pixels')
 			self.logger.info(f'🖼️  LLM screenshot resizing enabled: {width}x{height}')
 		llm = resolve_default_llm(llm)
+		if getattr(llm, 'supports_vision', True) is False and use_vision is not False:
+			logger.info(f'Vision disabled automatically because {llm.provider} is a text-only runtime')
+			use_vision = False
+		if require_live_evidence is None:
+			require_live_evidence = llm.provider.startswith('subscription-')
 
 		# set flashmode = True if llm is ChatBrowserUse
 		if llm.provider == 'browser-use':
@@ -258,7 +265,12 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.task_id: str = self.id
 		self.session_id: str = uuid7str()
 
-		base_profile = browser_profile or DEFAULT_BROWSER_PROFILE
+		if browser_profile is None and browser_session is None and browser is None:
+			from browser_use.runtime import resolve_runtime_browser_profile
+
+			base_profile = resolve_runtime_browser_profile()
+		else:
+			base_profile = browser_profile or DEFAULT_BROWSER_PROFILE
 		if base_profile is DEFAULT_BROWSER_PROFILE:
 			base_profile = base_profile.model_copy()
 		if demo_mode is not None and base_profile.demo_mode != demo_mode:
@@ -388,6 +400,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			llm_timeout=llm_timeout,
 			step_timeout=step_timeout,
 			final_response_after_failure=final_response_after_failure,
+			require_live_evidence=require_live_evidence,
+			evidence_minimum_matching_terms=evidence_minimum_matching_terms,
 			use_judge=use_judge,
 			ground_truth=ground_truth,
 			enable_planning=enable_planning,
@@ -1512,6 +1526,27 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				dom_text = ''
 		self.state.loop_detector.record_page_state(url, dom_text, element_count)
 
+	def _apply_live_evidence_gate(self) -> None:
+		"""Downgrade unsupported successful completion before callbacks, judging, and telemetry."""
+		if not self.settings.require_live_evidence or not self.history.history:
+			return
+		last_result = self.history.history[-1].result[-1]
+		if last_result.is_done is not True or last_result.success is not True:
+			return
+		metadata = dict(last_result.metadata or {})
+		if 'live_evidence_gate' in metadata:
+			return
+		gate = self.history.live_evidence(
+			self.task,
+			minimum_matching_terms=self.settings.evidence_minimum_matching_terms,
+		)
+		metadata['live_evidence_gate'] = gate.model_dump(mode='json')
+		last_result.metadata = metadata
+		if not gate.passed:
+			last_result.success = False
+			last_result.long_term_memory = f'Completion rejected by live evidence gate: {gate.reason}'
+			self.logger.warning(last_result.long_term_memory)
+
 	async def _inject_budget_warning(self, step_info: AgentStepInfo | None = None) -> None:
 		"""Inject a prominent budget warning when the agent has used >= 75% of its step budget.
 
@@ -2244,6 +2279,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		await self.step(step_info)
 
 		if self.history.is_done():
+			self._apply_live_evidence_gate()
 			await self.log_completion()
 
 			# Run full judge before done callback if enabled
@@ -2464,6 +2500,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			await on_step_end(self)
 
 		if self.history.is_done():
+			self._apply_live_evidence_gate()
 			await self.log_completion()
 
 			# Run full judge before done callback if enabled

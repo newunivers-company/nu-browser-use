@@ -9,29 +9,15 @@ This example demonstrates how to:
 
 This is the most advanced getting started example, combining all previous concepts.
 
-Setup:
-1. Get your API key from https://cloud.browser-use.com/new-api-key
-2. Set environment variable: export BROWSER_USE_API_KEY="your-key"
+Setup: sign in to an official subscription CLI or configure an installed local model.
 """
 
 import asyncio
-import os
-import sys
 
-# Add the parent directory to the path so we can import browser_use
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
-from dotenv import load_dotenv
-
-load_dotenv()
-
-from browser_use import Agent, ChatBrowserUse
+from browser_use import Agent
 
 
 async def main():
-	# Initialize the model
-	llm = ChatBrowserUse(model='bu-2-0')
-
 	# Define a multi-step task
 	task = """
     I want you to research Python web scraping libraries. Here's what I need:
@@ -50,7 +36,7 @@ async def main():
     """
 
 	# Create and run the agent
-	agent = Agent(task=task, llm=llm)
+	agent = Agent(task=task)
 	await agent.run()
 
 

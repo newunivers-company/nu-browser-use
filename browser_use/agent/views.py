@@ -31,6 +31,38 @@ from browser_use.utils import collect_sensitive_data_values, redact_sensitive_st
 
 logger = logging.getLogger(__name__)
 
+_EVIDENCE_STOP_WORDS = {
+	'answer',
+	'first',
+	'from',
+	'http',
+	'https',
+	'result',
+	'sentence',
+	'task',
+	'that',
+	'the',
+	'this',
+	'title',
+	'with',
+	'www',
+}
+
+
+def _evidence_terms(value: str) -> list[str]:
+	"""Return normalized Unicode terms suitable for bounded evidence comparison."""
+	return [term for term in re.findall(r'[^\W_]{2,}', value.casefold(), flags=re.UNICODE) if not term.isdigit()]
+
+
+def _live_state_sections(state_message: str) -> str:
+	"""Keep browser/read state while excluding task, agent memory, and planning sections."""
+	sections: list[str] = []
+	for tag_name in ('browser_state', 'read_state'):
+		match = re.search(rf'<{tag_name}>\s*(.*?)\s*</{tag_name}>', state_message, flags=re.DOTALL)
+		if match:
+			sections.append(match.group(1))
+	return '\n'.join(sections)
+
 
 class MessageCompactionSettings(BaseModel):
 	"""Summarizes older history into a compact memory block to reduce prompt size."""
@@ -85,6 +117,8 @@ class AgentSettings(BaseModel):
 	llm_timeout: int = 60  # Timeout in seconds for LLM calls (auto-detected: 30s for gemini, 90s for o3, 60s default)
 	step_timeout: int = 180  # Timeout in seconds for each step
 	final_response_after_failure: bool = True  # If True, attempt one final recovery call after max_failures
+	require_live_evidence: bool = False
+	evidence_minimum_matching_terms: int = Field(default=2, ge=1, le=10)
 
 	# Loop detection settings
 	loop_detection_window: int = 20  # Rolling window size for action similarity tracking
@@ -574,6 +608,33 @@ class AgentHistory(BaseModel):
 		return self._filter_sensitive_data_from_dict(serialized_history, sensitive_data)
 
 
+class LivePageEvidence(BaseModel):
+	"""Hashed proof of one live page observation without persisting full DOM content."""
+
+	model_config = ConfigDict(extra='forbid')
+
+	step: int = Field(ge=1)
+	url: str = Field(pattern=r'^https?://')
+	title: str
+	sources: list[Literal['browser_state', 'action_result']]
+	content_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+	observed_characters: int = Field(ge=1)
+	action_names: list[str] = Field(default_factory=list)
+	matched_output_terms: list[str] = Field(default_factory=list)
+
+
+class LiveEvidenceGate(BaseModel):
+	"""Machine-readable decision for evidence-grounded successful completion."""
+
+	model_config = ConfigDict(extra='forbid')
+
+	passed: bool
+	reason: str
+	required_output_terms: list[str] = Field(default_factory=list)
+	matched_output_terms: list[str] = Field(default_factory=list)
+	records: list[LivePageEvidence] = Field(default_factory=list)
+
+
 AgentStructuredOutput = TypeVar('AgentStructuredOutput', bound=BaseModel)
 
 
@@ -592,6 +653,77 @@ class AgentHistoryList(BaseModel, Generic[AgentStructuredOutput]):
 			if h.metadata:
 				total += h.metadata.duration_seconds
 		return total
+
+	def live_evidence(self, task: str, minimum_matching_terms: int = 2) -> LiveEvidenceGate:
+		"""Build a bounded proof that final-answer terms appeared in live browser state or action output."""
+		final_output = self.final_result() or ''
+		task_terms = set(_evidence_terms(task))
+		required_terms = [
+			term for term in _evidence_terms(final_output) if term not in task_terms and term not in _EVIDENCE_STOP_WORDS
+		]
+		required_terms = list(dict.fromkeys(required_terms))[:64]
+		records: list[LivePageEvidence] = []
+		all_observed_terms: set[str] = set()
+
+		for step_number, history_item in enumerate(self.history, start=1):
+			url = history_item.state.url or ''
+			if not url.startswith(('http://', 'https://')):
+				continue
+			sources: list[Literal['browser_state', 'action_result']] = []
+			observations: list[str] = []
+			if history_item.state_message:
+				live_state = _live_state_sections(history_item.state_message)
+				if live_state:
+					sources.append('browser_state')
+					observations.append(live_state)
+			for result in history_item.result:
+				if result.is_done:
+					continue
+				action_observation = result.extracted_content or result.long_term_memory
+				if action_observation:
+					if 'action_result' not in sources:
+						sources.append('action_result')
+					observations.append(action_observation)
+			observation = '\n'.join(observations).strip()
+			if not observation:
+				continue
+			observed_terms = set(_evidence_terms(observation))
+			all_observed_terms.update(observed_terms)
+			matched_terms = [term for term in required_terms if term in observed_terms]
+			action_names: list[str] = []
+			if history_item.model_output:
+				for action in history_item.model_output.action:
+					action_dump = action.model_dump(exclude_none=True, mode='json')
+					action_names.extend(action_dump.keys())
+			records.append(
+				LivePageEvidence(
+					step=step_number,
+					url=url,
+					title=history_item.state.title,
+					sources=sources,
+					content_sha256=hashlib.sha256(observation.encode('utf-8', errors='replace')).hexdigest(),
+					observed_characters=len(observation),
+					action_names=action_names,
+					matched_output_terms=matched_terms,
+				)
+			)
+
+		matched_terms = [term for term in required_terms if term in all_observed_terms]
+		required_match_count = min(max(1, minimum_matching_terms), len(required_terms)) if required_terms else 0
+		passed = bool(records) and (not required_terms or len(matched_terms) >= required_match_count)
+		if not records:
+			reason = 'no live HTTP browser observation was recorded'
+		elif required_terms and len(matched_terms) < required_match_count:
+			reason = f'only {len(matched_terms)}/{required_match_count} required output terms were observed live'
+		else:
+			reason = f'{len(records)} live browser evidence record(s) support the final output'
+		return LiveEvidenceGate(
+			passed=passed,
+			reason=reason,
+			required_output_terms=required_terms,
+			matched_output_terms=matched_terms,
+			records=records,
+		)
 
 	def __len__(self) -> int:
 		"""Return the number of history items"""

@@ -38,6 +38,34 @@ class DataSourceTestLevel(StrEnum):
 	AVAILABILITY = 'availability'
 
 
+class BrowserDataSourceContract(BaseModel):
+	"""Semantic browser evidence required to accept a rendered source."""
+
+	model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
+
+	require_same_origin: bool = True
+	allowed_final_path_prefixes: list[str] = Field(default_factory=list)
+	expected_title_markers: list[str] = Field(default_factory=list)
+	required_content_markers: list[str] = Field(default_factory=list)
+	minimum_visible_text_chars: int = Field(default=20, ge=0, le=100_000)
+	minimum_meaningful_elements: int = Field(default=1, ge=0, le=10_000)
+	minimum_interactive_elements: int = Field(default=1, ge=0, le=10_000)
+
+	@model_validator(mode='after')
+	def validate_browser_contract(self) -> Self:
+		"""Reject ambiguous paths and duplicate case-insensitive evidence markers."""
+		if any(not path.startswith('/') for path in self.allowed_final_path_prefixes):
+			raise ValueError('allowed_final_path_prefixes entries must start with /')
+		for field_name in ('allowed_final_path_prefixes', 'expected_title_markers', 'required_content_markers'):
+			values = getattr(self, field_name)
+			casefolded_values = [value.casefold() for value in values]
+			if any(not value for value in values):
+				raise ValueError(f'{field_name} entries must not be empty')
+			if len(casefolded_values) != len(set(casefolded_values)):
+				raise ValueError(f'{field_name} entries must be unique')
+		return self
+
+
 class DataSourceDefinition(BaseModel):
 	"""One externally hosted source used by browser evaluation tests."""
 
@@ -51,6 +79,7 @@ class DataSourceDefinition(BaseModel):
 	test_level: DataSourceTestLevel
 	expected_http_statuses: list[int] = Field(min_length=1)
 	description: str = Field(min_length=1)
+	browser_contract: BrowserDataSourceContract = Field(default_factory=BrowserDataSourceContract)
 
 	@model_validator(mode='after')
 	def validate_expected_http_statuses(self) -> Self:

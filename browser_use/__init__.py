@@ -69,6 +69,7 @@ if TYPE_CHECKING:
 	from browser_use.llm.openrouter.chat import ChatOpenRouter
 	from browser_use.llm.subscription_cli import ChatSubscriptionCLI
 	from browser_use.llm.vercel.chat import ChatVercel
+	from browser_use.runtime import RuntimeBrowserBackend, RuntimeConfig, RuntimeLLMBackend
 	from browser_use.sandbox import sandbox
 	from browser_use.tools.service import Controller, Tools
 
@@ -107,6 +108,9 @@ _LAZY_IMPORTS = {
 	'ChatOllama': ('browser_use.llm.ollama.chat', 'ChatOllama'),
 	'ChatOpenRouter': ('browser_use.llm.openrouter.chat', 'ChatOpenRouter'),
 	'ChatSubscriptionCLI': ('browser_use.llm.subscription_cli', 'ChatSubscriptionCLI'),
+	'RuntimeConfig': ('browser_use.runtime', 'RuntimeConfig'),
+	'RuntimeLLMBackend': ('browser_use.runtime', 'RuntimeLLMBackend'),
+	'RuntimeBrowserBackend': ('browser_use.runtime', 'RuntimeBrowserBackend'),
 	'ChatVercel': ('browser_use.llm.vercel.chat', 'ChatVercel'),
 	# LLM models module
 	'models': ('browser_use.llm.models', None),
@@ -166,6 +170,9 @@ __all__ = [
 	'ChatOpenRouter',
 	'ChatSubscriptionCLI',
 	'ChatVercel',
+	'RuntimeConfig',
+	'RuntimeLLMBackend',
+	'RuntimeBrowserBackend',
 	'Tools',
 	'Controller',
 	# LLM models module

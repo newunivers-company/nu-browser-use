@@ -15,9 +15,9 @@ Or as an MCP server in Claude Desktop or other MCP clients:
             "browser-use": {
                 "command": "uvx",
                 "args": ["browser-use[cli]", "--mcp"],
-                "env": {
-                    "BROWSER_USE_API_KEY": "...",
-                }
+				"env": {
+					"SUBSCRIPTION_LLM_PROVIDER": "codex"
+				}
             }
         }
     }

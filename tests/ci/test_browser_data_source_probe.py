@@ -5,6 +5,7 @@ from datetime import date
 from pathlib import Path
 from typing import cast
 
+import pytest
 import yaml
 from pydantic import HttpUrl
 
@@ -13,9 +14,12 @@ from browser_use.browser.views import BrowserStateSummary
 from browser_use.dom.views import DOMSelectorMap, SerializedDOMState
 from scripts.check_browser_data_sources import (
 	BrowserDataSourceResult,
+	BrowserGateMode,
 	BrowserProbeOptions,
+	BrowserRuntimeMode,
 	BrowserSessionProtocol,
 	BrowserSourceClassification,
+	build_browser_profile,
 	classify_browser_page,
 	inspect_browser_data_source,
 	probe_browser_catalog,
@@ -23,6 +27,7 @@ from scripts.check_browser_data_sources import (
 	summarize_browser_results,
 )
 from scripts.data_source_catalog import (
+	BrowserDataSourceContract,
 	DataSourceAccess,
 	DataSourceCatalog,
 	DataSourceCategory,
@@ -31,9 +36,23 @@ from scripts.data_source_catalog import (
 )
 
 
+class FakeDomNode:
+	"""Minimal semantic selector node used by browser evidence tests."""
+
+	def __init__(self, index: int, *, tag_name: str = 'button', text: str | None = None) -> None:
+		self.tag_name = tag_name
+		label = f'Interactive action number {index}' if text is None else text
+		self.attributes = {'aria-label': label} if label else {}
+
+	def get_meaningful_text_for_llm(self) -> str:
+		"""Return deterministic model-visible node text."""
+		return self.attributes.get('aria-label', '')
+
+
 def make_source(
 	source_id: str = 'browser_source',
 	test_level: DataSourceTestLevel = DataSourceTestLevel.BEHAVIORAL,
+	browser_contract: BrowserDataSourceContract | None = None,
 ) -> DataSourceDefinition:
 	"""Build a minimal validated source for browser probe tests."""
 	return DataSourceDefinition(
@@ -45,15 +64,26 @@ def make_source(
 		test_level=test_level,
 		expected_http_statuses=[200],
 		description='Browser probe test source.',
+		browser_contract=browser_contract or BrowserDataSourceContract(),
 	)
 
 
-def make_state(*, title: str = 'Interactive page', selector_count: int = 1) -> BrowserStateSummary:
+def make_state(
+	*,
+	title: str = 'Interactive page',
+	selector_count: int = 1,
+	url: str = 'https://browser_source.example.com/content',
+	tag_name: str = 'button',
+	node_text: str | None = None,
+) -> BrowserStateSummary:
 	"""Build model-visible browser state without starting Chromium."""
-	selector_map = cast(DOMSelectorMap, {index: object() for index in range(selector_count)})
+	selector_map = cast(
+		DOMSelectorMap,
+		{index: FakeDomNode(index, tag_name=tag_name, text=node_text) for index in range(selector_count)},
+	)
 	return BrowserStateSummary(
 		dom_state=SerializedDOMState(_root=None, selector_map=selector_map),
-		url='https://browser_source.example.com/content',
+		url=url,
 		title=title,
 		tabs=[],
 	)
@@ -172,6 +202,34 @@ class RecoveredNonInteractiveSession(FakeBrowserSession):
 		return self.state
 
 
+class UnstableDomSession(FakeBrowserSession):
+	"""Return materially different selector sets on every state capture."""
+
+	def __init__(self) -> None:
+		super().__init__(make_state(selector_count=1))
+		self.state_calls = 0
+
+	async def get_browser_state_summary(
+		self,
+		include_screenshot: bool = True,
+		cached: bool = False,
+		include_recent_events: bool = False,
+	) -> BrowserStateSummary:
+		"""Alternate between small and large rendered states."""
+		selector_counts = [1, 20, 1]
+		selector_count = selector_counts[min(self.state_calls, len(selector_counts) - 1)]
+		self.state_calls += 1
+		return make_state(selector_count=selector_count)
+
+
+class StartFailureSession(FakeBrowserSession):
+	"""Fail the shared runtime preflight before any source navigation."""
+
+	async def start(self) -> None:
+		"""Raise a deterministic local browser launch failure."""
+		raise RuntimeError('sandbox unavailable')
+
+
 async def test_browser_probe_reports_interactive_behavioral_source() -> None:
 	"""Behavioral sources pass only with reachable model-actionable state."""
 	session = FakeBrowserSession(make_state(selector_count=2))
@@ -222,7 +280,9 @@ async def test_browser_probe_retries_initial_non_interactive_state() -> None:
 
 	assert result.ok is True
 	assert result.selector_count == 2
-	assert session.state_calls == 2
+	assert result.dom_stable is True
+	assert result.stable_state_captures == 2
+	assert session.state_calls == 3
 	assert session.killed is True
 
 
@@ -240,6 +300,61 @@ async def test_browser_probe_clears_transient_capture_error_after_success() -> N
 	assert result.classification == BrowserSourceClassification.NON_INTERACTIVE
 	assert result.state_capture_errors == []
 	assert result.error is None
+	assert session.state_calls == 3
+
+
+async def test_browser_probe_rejects_empty_root_selector_false_positive() -> None:
+	"""A generic app root without text or controls must not count as actionable content."""
+	result = await inspect_browser_data_source(
+		make_source(),
+		BrowserProbeOptions(state_retry_delay_seconds=0),
+		asyncio.Semaphore(1),
+		session_factory=FakeSessionFactory(make_state_session := FakeBrowserSession(make_state(tag_name='div', node_text=''))),
+	)
+
+	assert make_state_session.killed is True
+	assert result.reachable is True
+	assert result.content_available is False
+	assert result.meaningful_selector_count == 0
+	assert result.interactive_element_count == 0
+	assert result.classification == BrowserSourceClassification.NON_INTERACTIVE
+	assert result.ok is False
+
+
+async def test_browser_probe_requires_target_path_contract() -> None:
+	"""A rendered but off-target path must not pass source fidelity checks."""
+	source = make_source(
+		browser_contract=BrowserDataSourceContract(allowed_final_path_prefixes=['/expected']),
+	)
+	result = await inspect_browser_data_source(
+		source,
+		BrowserProbeOptions(state_retry_delay_seconds=0),
+		asyncio.Semaphore(1),
+		session_factory=FakeSessionFactory(
+			FakeBrowserSession(make_state(selector_count=3, url='https://browser_source.example.com/other'))
+		),
+	)
+
+	assert result.target_matched is False
+	assert result.classification == BrowserSourceClassification.TARGET_MISMATCH
+	assert result.actionable is False
+	assert result.target_errors and 'final path' in result.target_errors[0]
+
+
+async def test_browser_probe_requires_consecutive_stable_dom_states() -> None:
+	"""Materially changing DOM snapshots remain unstable after the bounded capture window."""
+	result = await inspect_browser_data_source(
+		make_source(),
+		BrowserProbeOptions(state_retry_delay_seconds=0, state_stability_tolerance=0),
+		asyncio.Semaphore(1),
+		session_factory=FakeSessionFactory(UnstableDomSession()),
+	)
+
+	assert result.state_captures == 3
+	assert result.stable_state_captures == 1
+	assert result.dom_stable is False
+	assert result.classification == BrowserSourceClassification.UNSTABLE
+	assert result.ok is False
 
 
 async def test_browser_probe_separates_cleanup_failure_from_source_result() -> None:
@@ -274,16 +389,21 @@ async def test_browser_catalog_retries_failed_source_in_fresh_session(tmp_path: 
 	)
 	catalog_path = tmp_path / 'catalog.yaml'
 	catalog_path.write_text(yaml.safe_dump(catalog.model_dump(mode='json')), encoding='utf-8')
-	failed_session = FakeBrowserSession(make_state(), state_failure=ConnectionError('CDP closed'))
-	passed_session = FakeBrowserSession(make_state(selector_count=3))
+	failed_session = FakeBrowserSession(
+		make_state(url='https://browser_source.example.com/content'),
+		state_failure=ConnectionError('CDP closed'),
+	)
+	passed_session = FakeBrowserSession(make_state(selector_count=3, url='https://browser_source.example.com/content'))
 
 	summary = await probe_browser_catalog(
 		BrowserProbeOptions(
 			catalog_path=catalog_path,
 			state_attempts=1,
+			required_stable_states=1,
 			state_retry_delay_seconds=0,
 			source_attempts=2,
 			source_retry_delay_seconds=0,
+			preflight=False,
 		),
 		session_factory=SequencedSessionFactory([failed_session, passed_session]),
 	)
@@ -299,7 +419,6 @@ async def test_browser_catalog_retries_failed_source_in_fresh_session(tmp_path: 
 
 def test_browser_page_classification_distinguishes_reachability_states() -> None:
 	"""Keep runtime, anti-bot, login, sparse, interactive, and page errors distinct."""
-	common = {'state_error': None, 'error': None}
 	assert (
 		classify_browser_page(
 			final_url=None,
@@ -311,19 +430,31 @@ def test_browser_page_classification_distinguishes_reachability_states() -> None
 		== BrowserSourceClassification.BROWSER_UNAVAILABLE
 	)
 	assert (
-		classify_browser_page(final_url='https://example.com/', title='Just a moment...', selector_count=5, **common)
+		classify_browser_page(
+			final_url='https://example.com/',
+			title='Just a moment...',
+			selector_count=5,
+			state_error=None,
+			error=None,
+		)
 		== BrowserSourceClassification.ANTI_BOT
 	)
 	assert (
-		classify_browser_page(final_url='https://example.com/login', title='Sign in', selector_count=10, **common)
+		classify_browser_page(
+			final_url='https://example.com/login',
+			title='Sign in',
+			selector_count=10,
+			state_error=None,
+			error=None,
+		)
 		== BrowserSourceClassification.LOGIN_REQUIRED
 	)
 	assert (
-		classify_browser_page(final_url='https://example.com/', title='Shell', selector_count=0, **common)
+		classify_browser_page(final_url='https://example.com/', title='Shell', selector_count=0, state_error=None, error=None)
 		== BrowserSourceClassification.NON_INTERACTIVE
 	)
 	assert (
-		classify_browser_page(final_url='https://example.com/', title='Content', selector_count=3, **common)
+		classify_browser_page(final_url='https://example.com/', title='Content', selector_count=3, state_error=None, error=None)
 		== BrowserSourceClassification.INTERACTIVE
 	)
 	assert (
@@ -350,7 +481,10 @@ def test_browser_summary_gates_behavioral_failures_by_default() -> None:
 			test_level=source.test_level,
 			classification=BrowserSourceClassification.ERROR,
 			reachable=False,
+			target_matched=False,
+			content_available=False,
 			actionable=False,
+			dom_stable=False,
 			ok=False,
 			requested_url=str(source.url),
 			elapsed_ms=1,
@@ -362,6 +496,90 @@ def test_browser_summary_gates_behavioral_failures_by_default() -> None:
 	assert summarize_browser_results(catalog, results, strict=False).gate_failures == 1
 	assert summarize_browser_results(catalog, results, strict=True).gate_failures == 2
 	assert summarize_browser_results(catalog, results, strict=True).infrastructure_failures == 0
+
+
+def test_browser_summary_separates_reachability_and_actionability_gates() -> None:
+	"""An availability anti-bot page may be reachable without passing actionability."""
+	source = make_source(test_level=DataSourceTestLevel.AVAILABILITY)
+	catalog = DataSourceCatalog(version=1, last_reviewed=date(2026, 8, 12), sources=[source])
+	result = BrowserDataSourceResult(
+		source_id=source.id,
+		category=source.category,
+		test_level=source.test_level,
+		classification=BrowserSourceClassification.ANTI_BOT,
+		reachable=True,
+		target_matched=True,
+		content_available=True,
+		actionable=False,
+		dom_stable=True,
+		ok=True,
+		requested_url=str(source.url),
+		final_url=str(source.url),
+		title='Just a moment...',
+		elapsed_ms=1,
+	)
+
+	assert (
+		summarize_browser_results(
+			catalog,
+			[result],
+			strict=True,
+			gate_mode=BrowserGateMode.REACHABILITY,
+		).gate_failures
+		== 0
+	)
+	assert (
+		summarize_browser_results(
+			catalog,
+			[result],
+			strict=True,
+			gate_mode=BrowserGateMode.ACTIONABILITY,
+		).gate_failures
+		== 1
+	)
+
+
+def test_browser_profile_supports_explicit_executable_and_cloud_modes(tmp_path: Path) -> None:
+	"""Runtime options produce mutually exclusive local and Browser Use Cloud profiles."""
+	executable = tmp_path / 'chrome'
+	executable.touch(mode=0o755)
+	local_options = BrowserProbeOptions(executable_path=executable)
+	local_profile = build_browser_profile(local_options, tmp_path / 'local-profile')
+	cloud_options = BrowserProbeOptions(
+		use_cloud=True,
+		cloud_proxy_country_code='us',
+		cloud_timeout_minutes=15,
+	)
+	cloud_profile = build_browser_profile(cloud_options, tmp_path / 'unused-cloud-profile')
+
+	assert local_profile.executable_path == executable
+	assert local_profile.chromium_sandbox is True
+	assert local_profile.use_cloud is False
+	assert cloud_profile.use_cloud is True
+	assert cloud_profile.cloud_browser_params is not None
+	assert cloud_profile.cloud_browser_params.proxy_country_code == 'us'
+	with pytest.raises(ValueError, match='cannot be combined'):
+		BrowserProbeOptions(use_cloud=True, executable_path=executable)
+
+
+async def test_browser_preflight_failure_stops_source_scheduling(tmp_path: Path) -> None:
+	"""One shared launch failure should classify infrastructure without navigating every source."""
+	sources = [make_source(), make_source('second_source')]
+	catalog = DataSourceCatalog(version=1, last_reviewed=date(2026, 8, 12), sources=sources)
+	catalog_path = tmp_path / 'catalog.yaml'
+	catalog_path.write_text(yaml.safe_dump(catalog.model_dump(mode='json')), encoding='utf-8')
+	session = StartFailureSession(make_state())
+	summary = await probe_browser_catalog(
+		BrowserProbeOptions(catalog_path=catalog_path),
+		session_factory=FakeSessionFactory(session),
+	)
+
+	assert summary.preflight is not None and summary.preflight.ok is False
+	assert summary.total == 2
+	assert summary.infrastructure_failures == 1
+	assert summary.results[0].classification == BrowserSourceClassification.BROWSER_UNAVAILABLE
+	assert summary.results[0].browser_mode == BrowserRuntimeMode.LOCAL_DEFAULT
+	assert session.killed is True
 
 
 def test_select_browser_sources_validates_ids_and_combines_filters(tmp_path: Path) -> None:

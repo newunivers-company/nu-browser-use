@@ -44,16 +44,23 @@ Run the same catalog through isolated real Chromium sessions to distinguish reac
 
 ```bash
 uv run python -m scripts.check_browser_data_sources \
-  --concurrency 1 \
-  --strict \
-  --output /tmp/browser-use-browser-probe.json
+	--concurrency 1 \
+	--strict \
+	--gate-mode actionability \
+	--output /tmp/browser-use-browser-probe.json
 ```
 
 Use `--disable-sandbox` only inside a trusted container or on a CI host where Chromium user namespaces are unavailable.
-The browser probe disables default extensions unless `--enable-extensions` is explicitly requested, retries initial non-interactive
-JavaScript shells, retries a failed source in a fresh Chromium process, keeps its state and shutdown timeouts longer than the internal
-DOM capture deadline, and removes every isolated temporary profile after use. Failures before navigation are classified and counted as
-`browser_unavailable`, so host/runtime instability is not misreported as a website regression.
+Prefer `--executable-path /path/to/google-chrome` when the bundled Chromium cannot use the host sandbox. The probe performs one shared
+launch preflight before scheduling sites, requires consecutive stable DOM captures, ignores empty app roots, and records separate
+`reachable`, `target_matched`, `content_available`, and `actionable` evidence. Source-specific browser contracts can constrain final paths,
+titles, rendered content markers, visible text, meaningful elements, and interactive controls. Use `--gate-mode reachability`, `content`,
+or `actionability` to select the required evidence level; `catalog` preserves the source's behavioral/availability contract.
+
+For production anti-bot workloads, `--use-cloud` provisions a Browser Use Cloud browser and requires `BROWSER_USE_API_KEY`. Optional
+`--cloud-profile-id`, `--cloud-proxy-country-code`, and `--cloud-timeout-minutes` values are forwarded to the cloud profile. Hosted browsers
+are optimized for browser automation, captcha and bot-detection handling, remote profile synchronization, and low-latency execution.
+Robots-denied sources remain excluded from crawl traversal regardless of browser runtime.
 
 Run a robots-aware, read-only crawl experiment over safe same-origin links:
 
@@ -77,6 +84,8 @@ gate fails. Add `--strict` to include availability-only sources. Tune bounded ag
 `--minimum-pass-rate`, `--minimum-fetched-sources`, and `--maximum-fetch-error-rate`. JSON evidence records redirect
 chains, response truncation, declared content length, and whether a SHA-256 covers the full body or only its bounded
 prefix.
+Truncated HTML is classified as `truncated_html` and is not expanded or accepted as behavioral crawl content; increase
+`--max-content-bytes` for a bounded recheck instead of treating a script-heavy prefix as a complete page.
 
 ## Running the Tests
 
@@ -85,6 +94,7 @@ Every task includes a validated `keyless` contract. Run all 17 live browser cont
 ```bash
 uv run python tests/ci/evaluate_tasks.py \
   --mode deterministic \
+	--executable-path /usr/bin/google-chrome \
   --max-parallel 1 \
   --output /tmp/keyless-evaluation.json
 ```
@@ -92,13 +102,19 @@ uv run python tests/ci/evaluate_tasks.py \
 Use `--disable-sandbox` only on a trusted CI host where Chromium user namespaces are unavailable. Keyless contracts allow only validated
 navigation, click, fill, submit, and wait actions; task YAML cannot execute arbitrary browser JavaScript. Results include structured fields,
 collections, validator evidence, timings, action traces, and machine-readable failure reasons.
+All evaluation modes accept the same browser runtime options: `--executable-path` for a system Chrome, or `--use-cloud-browser` with optional
+`--cloud-profile-id`, `--cloud-proxy-country-code`, and `--cloud-timeout-minutes`. A shared browser preflight runs before task subprocesses;
+`--skip-browser-preflight` is intended only for the already-validated child process created by the evaluator. Final extraction requires
+consecutive stable URL, title, DOM selector count, and visible-text length captures. Tune this with `--required-stable-states`,
+`--state-stability-tolerance`, and `--state-retry-delay-seconds` when a source has known delayed rendering.
 Each isolated evaluator has a 150-second process deadline and one fresh-process retry; a timeout terminates its Chromium process group instead
 of blocking the complete CI lane. Override these bounded defaults with `--task-timeout-seconds` and `--subprocess-attempts` when required.
 
 Available evaluation modes:
 
-- `auto`: use an explicitly selected subscription CLI route first, otherwise prefer `ChatBrowserUse` plus the independent Google judge when
-  both keys exist, then use an explicitly configured local model, otherwise run deterministic contracts.
+- `auto`: resolve to deterministic-first `hybrid` execution. Verified contracts run without an LLM; only failures escalate to an explicitly
+  configured local model or an authenticated subscription CLI.
+- `hybrid`: the explicit form of `auto`, preserving deterministic failure evidence in any autonomous fallback result.
 - `deterministic`: execute the live browser contract without an LLM. This is the required CI lane and requires all 17 tasks to execute and pass.
 - `replay`: use native `Agent.rerun_history()` when the task declares a checked-in
   `replay_history_path` inside its task directory. AI-dependent history steps fail explicitly
@@ -135,6 +151,9 @@ The adapter reads no credential files, removes OpenAI/Anthropic/xAI API-key vari
 search, persistence, and subagents where each CLI supports those controls, and uses a temporary read-only working directory. It is text-only,
 so normal Python usage must configure `Agent(use_vision=False)`. Missing or expired subscriptions are reported as skipped provider routes;
 an all-skipped run still fails the quality gate. Do not place personal subscription sessions in shared CI runners.
+Codex-specific response schemas omit unsupported JSON Schema `format` annotations during transport and still validate returned data against
+the original Pydantic v2 model. Model evaluations pass only when the agent reports completion, produces output without execution errors, and
+the full trace judge validates the run; use `history.is_validated()` rather than treating `history.is_successful()` as independent evidence.
 
 Local model names are never replaced. Configure an installed model explicitly:
 

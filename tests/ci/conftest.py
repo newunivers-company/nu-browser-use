@@ -34,7 +34,7 @@ os.environ['SKIP_LLM_API_KEY_VERIFICATION'] = 'true'
 from bubus import BaseEvent
 
 from browser_use import Agent
-from browser_use.browser import BrowserProfile, BrowserSession
+from browser_use.browser import BrowserSession
 from browser_use.sync.service import CloudSync
 
 
@@ -157,12 +157,17 @@ def create_mock_llm(actions: list[str] | None = None) -> BaseChatModel:
 @pytest.fixture(scope='module')
 async def browser_session():
 	"""Create a real browser session for testing"""
+	from browser_use.runtime import resolve_runtime_browser_profile
+
+	runtime_profile = resolve_runtime_browser_profile()
 	session = BrowserSession(
-		browser_profile=BrowserProfile(
-			headless=True,
-			user_data_dir=None,  # Use temporary directory
-			keep_alive=True,
-			enable_default_extensions=True,  # Enable extensions during tests
+		browser_profile=runtime_profile.model_copy(
+			update={
+				'headless': True,
+				'user_data_dir': None,  # Use temporary directory
+				'keep_alive': True,
+				'enable_default_extensions': True,  # Enable extensions during tests
+			}
 		)
 	)
 	await session.start()

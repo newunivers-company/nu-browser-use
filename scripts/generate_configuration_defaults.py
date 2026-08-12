@@ -23,6 +23,7 @@ AGENT_PARAMETERS = (
 	'llm_timeout',
 	'step_timeout',
 	'final_response_after_failure',
+	'require_live_evidence',
 	'message_compaction',
 	'enable_planning',
 	'directly_open_url',
@@ -87,7 +88,8 @@ def generate_document() -> str:
 		[
 			'',
 			'`llm_timeout=None` means the timeout is selected from the model family. '
-			'When no LLM is supplied or configured, `ChatBrowserUse()` is used.',
+			'When no LLM is supplied or configured, the keyless runtime selects an authenticated Codex, Claude, or Grok CLI, '
+			'then an explicitly configured local model.',
 			'',
 			'## Browser',
 			'',

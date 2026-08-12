@@ -21,31 +21,40 @@ from pydantic import BaseModel, ConfigDict, Field
 
 load_dotenv()
 
-from browser_use import Agent, AgentHistoryList, BrowserProfile, BrowserSession, ChatBrowserUse
+from browser_use import Agent, AgentHistoryList, BrowserSession, ChatBrowserUse
 from browser_use.agent.views import ActionResult
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.google.chat import ChatGoogle
 from browser_use.llm.messages import BaseMessage, UserMessage
 from browser_use.llm.subscription_cli import ChatSubscriptionCLI, SubscriptionCLIProvider, inspect_subscription_cli
 from tests.ci.evaluation_models import (
+	EvaluationBrowserOptions,
 	EvaluationMode,
 	EvaluationReasonCode,
 	EvaluationResult,
 	EvaluationSummary,
 	LocalEvaluationProvider,
 )
-from tests.ci.keyless_evaluation import KeylessRunnerOptions, load_evaluation_task, run_keyless_task
+from tests.ci.keyless_evaluation import (
+	KeylessRunnerOptions,
+	build_evaluation_browser_profile,
+	close_browser_session,
+	load_evaluation_task,
+	run_keyless_task,
+)
 
 DEFAULT_TASK_DIR = Path(__file__).resolve().parents[1] / 'agent_tasks'
 DEFAULT_MIN_PASS_RATE = 0.60
 DEFAULT_MIN_EXECUTED_TASKS = 3
-
-
-class JudgeResponse(BaseModel):
-	"""Structured success judgement returned by an evaluation LLM."""
-
-	success: bool
-	explanation: str
+KEYLESS_EVALUATION_MODES = frozenset(
+	{
+		EvaluationMode.HYBRID,
+		EvaluationMode.DETERMINISTIC,
+		EvaluationMode.REPLAY,
+		EvaluationMode.LOCAL,
+		EvaluationMode.SUBSCRIPTION,
+	}
+)
 
 
 class SubscriptionProbe(BaseModel):
@@ -54,7 +63,7 @@ class SubscriptionProbe(BaseModel):
 	status: str = Field(pattern='^ok$')
 
 
-class EvaluationRunOptions(BaseModel):
+class EvaluationRunOptions(EvaluationBrowserOptions):
 	"""Validated CLI and environment inputs for one evaluation run."""
 
 	model_config = ConfigDict(extra='forbid')
@@ -65,7 +74,12 @@ class EvaluationRunOptions(BaseModel):
 	output_path: Path | None = None
 	history_dir: Path | None = None
 	max_parallel: int = Field(default=1, ge=1, le=10)
-	disable_sandbox: bool = False
+	browser_preflight: bool = True
+	browser_launch_timeout_seconds: float = Field(default=30.0, ge=1, le=120)
+	browser_shutdown_timeout_seconds: float = Field(default=15.0, ge=1, le=120)
+	required_stable_states: int = Field(default=2, ge=1, le=5)
+	state_stability_tolerance: float = Field(default=0.2, ge=0, le=1)
+	state_retry_delay_seconds: float = Field(default=1.0, ge=0, le=10)
 	local_provider: LocalEvaluationProvider = LocalEvaluationProvider.AUTO
 	local_model: str | None = None
 	local_base_url: str | None = None
@@ -110,16 +124,10 @@ class DeterministicReplayLLM:
 
 
 def resolve_evaluation_mode(options: EvaluationRunOptions) -> EvaluationMode:
-	"""Select the strongest configured route without changing any model name."""
+	"""Select deterministic-first hybrid execution unless the caller requests an exact route."""
 	if options.mode != EvaluationMode.AUTO:
 		return options.mode
-	if options.subscription_provider is not None:
-		return EvaluationMode.SUBSCRIPTION
-	if os.getenv('BROWSER_USE_API_KEY') and os.getenv('GOOGLE_API_KEY'):
-		return EvaluationMode.CLOUD
-	if options.local_model:
-		return EvaluationMode.LOCAL
-	return EvaluationMode.DETERMINISTIC
+	return EvaluationMode.HYBRID
 
 
 def create_local_evaluation_llm(options: EvaluationRunOptions) -> BaseChatModel:
@@ -236,9 +244,48 @@ async def provider_connectivity_errors(options: EvaluationRunOptions, mode: Eval
 	return []
 
 
+async def browser_runtime_preflight_error(options: EvaluationRunOptions) -> str | None:
+	"""Launch and close the selected browser once before scheduling task subprocesses."""
+	if not options.browser_preflight:
+		return None
+	if options.use_cloud_browser and not os.getenv('BROWSER_USE_API_KEY'):
+		return 'BROWSER_USE_API_KEY is required for the cloud browser runtime'
+	if options.executable_path is not None:
+		executable_path = options.executable_path.expanduser()
+		if not executable_path.is_file() or not os.access(executable_path, os.X_OK):
+			return f'Browser executable is missing or not executable: {executable_path}'
+
+	session: BrowserSession | None = None
+	with tempfile.TemporaryDirectory(prefix='nu-evaluation-browser-preflight-') as profile_directory:
+		try:
+			profile = build_evaluation_browser_profile(options, Path(profile_directory))
+			session = BrowserSession(browser_profile=profile)
+			await asyncio.wait_for(session.start(), timeout=options.browser_launch_timeout_seconds)
+		except Exception as error:
+			diagnostic = ' '.join(str(error).splitlines())[:2000]
+			return f'Browser preflight failed: {type(error).__name__}: {diagnostic}'
+		finally:
+			await close_browser_session(session, options.browser_shutdown_timeout_seconds)
+	return None
+
+
 def _keyless_options(options: EvaluationRunOptions) -> KeylessRunnerOptions:
 	"""Translate evaluation settings into deterministic browser resource controls."""
-	return KeylessRunnerOptions(disable_sandbox=options.disable_sandbox)
+	return KeylessRunnerOptions(
+		disable_sandbox=options.disable_sandbox,
+		executable_path=options.executable_path,
+		use_cloud_browser=options.use_cloud_browser,
+		cloud_profile_id=options.cloud_profile_id,
+		cloud_proxy_country_code=options.cloud_proxy_country_code,
+		cloud_timeout_minutes=options.cloud_timeout_minutes,
+		minimum_page_load_wait_seconds=options.minimum_page_load_wait_seconds,
+		network_idle_wait_seconds=options.network_idle_wait_seconds,
+		launch_timeout_seconds=options.browser_launch_timeout_seconds,
+		shutdown_timeout_seconds=options.browser_shutdown_timeout_seconds,
+		required_stable_states=options.required_stable_states,
+		state_stability_tolerance=options.state_stability_tolerance,
+		state_retry_delay_seconds=options.state_retry_delay_seconds,
+	)
 
 
 async def run_replay_task(task_path: Path, options: EvaluationRunOptions) -> EvaluationResult:
@@ -293,13 +340,7 @@ async def _run_saved_history_replay(
 	session: BrowserSession | None = None
 	try:
 		with tempfile.TemporaryDirectory(prefix=f'nu-history-replay-{task_definition.source_id}-') as profile_directory:
-			profile = BrowserProfile(
-				headless=True,
-				user_data_dir=Path(profile_directory),
-				keep_alive=False,
-				enable_default_extensions=False,
-				chromium_sandbox=not options.disable_sandbox,
-			)
+			profile = build_evaluation_browser_profile(options, Path(profile_directory))
 			session = BrowserSession(browser_profile=profile)
 			replay_llm = cast(BaseChatModel, DeterministicReplayLLM())
 			agent = Agent(task=task_definition.task, llm=replay_llm, browser_session=session)
@@ -356,17 +397,14 @@ async def _run_saved_history_replay(
 			duration_ms=round((time.monotonic() - started_at) * 1000),
 		)
 	finally:
-		if session is not None:
-			try:
-				await session.kill()
-			except Exception:
-				pass
+		await close_browser_session(session, options.browser_shutdown_timeout_seconds)
 
 
 async def run_model_task(task_path: Path, options: EvaluationRunOptions, mode: EvaluationMode) -> EvaluationResult:
 	"""Run one real agent using either local inference or the preferred cloud models."""
 	started_at = time.monotonic()
 	session: BrowserSession | None = None
+	profile_directory = tempfile.TemporaryDirectory(prefix='nu-model-evaluation-')
 	try:
 		task_definition = load_evaluation_task(task_path)
 		if mode == EvaluationMode.CLOUD:
@@ -404,20 +442,26 @@ async def run_model_task(task_path: Path, options: EvaluationRunOptions, mode: E
 			logging.getLogger(logger_name).setLevel(logging.CRITICAL)
 		warnings.filterwarnings('ignore')
 
-		profile = BrowserProfile(
-			headless=True,
-			user_data_dir=None,
-			keep_alive=False,
-			enable_default_extensions=False,
-			chromium_sandbox=not options.disable_sandbox,
-		)
+		profile = build_evaluation_browser_profile(options, Path(profile_directory.name))
 		session = BrowserSession(browser_profile=profile)
-		await session.start()
+		await asyncio.wait_for(session.start(), timeout=options.browser_launch_timeout_seconds)
+		criteria = '\n- '.join(task_definition.judge_context)
 		agent = Agent(
 			task=task_definition.task,
 			llm=agent_llm,
 			browser_session=session,
 			use_vision=False if mode == EvaluationMode.SUBSCRIPTION else True,
+			judge_llm=judge_llm,
+			ground_truth=f'- {criteria}',
+			require_live_evidence=True,
+			extend_system_message=(
+				'After a navigation or click changes the page, verify that the live URL and title are complete before '
+				'extracting them. Use the wait action and inspect the next browser state when content is still loading. '
+				'Every factual value in the final answer must come from a successful observation or extraction in the current '
+				'browser run; never fill missing page content from memory or inference. If extraction reports that requested '
+				'content is unavailable, do not call done: scroll, open the matching result or detail view, and retry extraction. '
+				'Only report successful completion after the required live-page evidence has been obtained.'
+			),
 		)
 		history: AgentHistoryList = await agent.run(max_steps=task_definition.max_steps)
 		agent_output = history.final_result() or ''
@@ -426,32 +470,34 @@ async def run_model_task(task_path: Path, options: EvaluationRunOptions, mode: E
 			options.history_dir.mkdir(parents=True, exist_ok=True)
 			agent.save_history(options.history_dir / f'{task_path.stem}.json')
 
-		debug_info = f'Steps: {history.number_of_steps()}, Final result length: {len(agent_output)}'
-		criteria = '\n- '.join(task_definition.judge_context)
-		judge_prompt = f"""
-You are an evaluator of a browser agent task inside a CI/CD pipeline.
-
-Task:
-{task_definition.task}
-
-Agent output:
-{agent_output if agent_output else '[No output provided]'}
-
-Execution evidence: {debug_info}
-
-Criteria for success:
-- {criteria}
-
-Reply using the requested structured schema. If the agent produced no output, mark the task unsuccessful.
-"""
-		response = await judge_llm.ainvoke([UserMessage(content=judge_prompt)], output_format=JudgeResponse)
-		judge_response = response.completion
+		agent_success = history.is_done() and history.is_successful() is True
+		judge_validated = history.is_validated() is True
+		history_errors = [error for error in history.errors() if error]
+		action_results = history.action_results()
+		last_result_metadata = action_results[-1].metadata if action_results else None
+		live_evidence_gate = (last_result_metadata or {}).get('live_evidence_gate')
+		passed = agent_success and judge_validated and not history_errors and bool(agent_output)
+		judgement = history.judgement() or {}
+		failure_reasons: list[str] = []
+		if not agent_success:
+			failure_reasons.append('agent did not report successful completion')
+		if not agent_output:
+			failure_reasons.append('agent produced no final output')
+		if not judge_validated:
+			failure_reasons.append(str(judgement.get('failure_reason') or 'trace judge did not validate the run'))
+		if history_errors:
+			failure_reasons.append(f'{len(history_errors)} execution error(s) were recorded')
+		explanation = (
+			str(judgement.get('reasoning') or 'Agent completion and trace judge validation passed')
+			if passed
+			else '; '.join(failure_reasons)
+		)
 		return EvaluationResult(
 			file=task_path.name,
-			status='passed' if judge_response.success else 'failed',
-			explanation=judge_response.explanation,
+			status='passed' if passed else 'failed',
+			explanation=explanation,
 			mode=mode,
-			reason_code=(EvaluationReasonCode.COMPLETED if judge_response.success else EvaluationReasonCode.ASSERTION_FAILED),
+			reason_code=(EvaluationReasonCode.COMPLETED if passed else EvaluationReasonCode.ASSERTION_FAILED),
 			source_id=task_definition.source_id,
 			duration_ms=round((time.monotonic() - started_at) * 1000),
 			output={
@@ -461,6 +507,13 @@ Reply using the requested structured schema. If the agent produced no output, ma
 				'agent_model': agent_llm.name,
 				'judge_provider': judge_llm.provider,
 				'judge_model': judge_llm.name,
+				'agent_success': agent_success,
+				'judge_validated': judge_validated,
+				'judgement': judgement,
+				'actions': history.action_names(),
+				'urls': history.urls(),
+				'error_count': len(history_errors),
+				'live_evidence_gate': live_evidence_gate,
 			},
 		)
 	except ValueError as error:
@@ -482,27 +535,106 @@ Reply using the requested structured schema. If the agent produced no output, ma
 			duration_ms=round((time.monotonic() - started_at) * 1000),
 		)
 	finally:
-		if session is not None:
-			try:
-				await session.kill()
-			except Exception:
-				pass
+		await close_browser_session(session, options.browser_shutdown_timeout_seconds)
+		profile_directory.cleanup()
 
 
 async def run_single_task(task_path: Path, options: EvaluationRunOptions, mode: EvaluationMode) -> EvaluationResult:
 	"""Dispatch one task to the selected evaluation route."""
+	browser_error = await browser_runtime_preflight_error(options)
+	if browser_error:
+		return EvaluationResult(
+			file=task_path.name,
+			status='skipped',
+			explanation=browser_error,
+			mode=mode,
+			reason_code=EvaluationReasonCode.BROWSER_UNAVAILABLE,
+			source_id=_task_source_id(task_path),
+		)
 	if mode == EvaluationMode.DETERMINISTIC:
 		return await run_keyless_task(task_path, _keyless_options(options))
+	if mode == EvaluationMode.HYBRID:
+		return await run_hybrid_task(task_path, options)
 	if mode == EvaluationMode.REPLAY:
 		return await run_replay_task(task_path, options)
 	return await run_model_task(task_path, options, mode)
 
 
+async def run_hybrid_task(task_path: Path, options: EvaluationRunOptions) -> EvaluationResult:
+	"""Run the verified contract first and escalate only a real failure to an available model route."""
+	deterministic_result = await run_keyless_task(task_path, _keyless_options(options))
+	deterministic_output = dict(deterministic_result.output)
+	if deterministic_result.success:
+		deterministic_output['execution_route'] = 'deterministic'
+		return deterministic_result.model_copy(update={'mode': EvaluationMode.HYBRID, 'output': deterministic_output})
+
+	fallback_mode = (
+		EvaluationMode.LOCAL if options.local_model and options.subscription_provider is None else EvaluationMode.SUBSCRIPTION
+	)
+	fallback_errors = provider_preflight_errors(options, fallback_mode)
+	if not fallback_errors:
+		fallback_errors = await provider_connectivity_errors(options, fallback_mode)
+	if fallback_errors:
+		deterministic_output.update(
+			{
+				'execution_route': 'deterministic_failed',
+				'autonomous_fallback': fallback_mode.value,
+				'autonomous_fallback_errors': fallback_errors,
+			}
+		)
+		return deterministic_result.model_copy(
+			update={
+				'mode': EvaluationMode.HYBRID,
+				'explanation': f'{deterministic_result.explanation}; autonomous fallback unavailable: {"; ".join(fallback_errors)}',
+				'output': deterministic_output,
+			}
+		)
+
+	model_result = await run_model_task(task_path, options, fallback_mode)
+	model_output = dict(model_result.output)
+	model_output.update(
+		{
+			'execution_route': 'autonomous_fallback',
+			'deterministic_failure': deterministic_result.explanation,
+			'deterministic_reason_code': deterministic_result.reason_code.value,
+		}
+	)
+	return model_result.model_copy(update={'mode': EvaluationMode.HYBRID, 'output': model_output})
+
+
 def _subprocess_arguments(task_path: Path, options: EvaluationRunOptions, mode: EvaluationMode) -> list[str]:
 	"""Build explicit child arguments so every task receives identical validated settings."""
-	arguments = [sys.executable, __file__, '--task', str(task_path), '--mode', mode.value]
+	arguments = [sys.executable, __file__, '--task', str(task_path), '--mode', mode.value, '--skip-browser-preflight']
 	if options.disable_sandbox:
 		arguments.append('--disable-sandbox')
+	if options.executable_path is not None:
+		arguments.extend(['--executable-path', str(options.executable_path)])
+	if options.use_cloud_browser:
+		arguments.append('--use-cloud-browser')
+	if options.cloud_profile_id:
+		arguments.extend(['--cloud-profile-id', options.cloud_profile_id])
+	if options.cloud_proxy_country_code:
+		arguments.extend(['--cloud-proxy-country-code', options.cloud_proxy_country_code])
+	if options.cloud_timeout_minutes is not None:
+		arguments.extend(['--cloud-timeout-minutes', str(options.cloud_timeout_minutes)])
+	arguments.extend(
+		[
+			'--minimum-page-load-wait-seconds',
+			str(options.minimum_page_load_wait_seconds),
+			'--network-idle-wait-seconds',
+			str(options.network_idle_wait_seconds),
+			'--browser-launch-timeout-seconds',
+			str(options.browser_launch_timeout_seconds),
+			'--browser-shutdown-timeout-seconds',
+			str(options.browser_shutdown_timeout_seconds),
+			'--required-stable-states',
+			str(options.required_stable_states),
+			'--state-stability-tolerance',
+			str(options.state_stability_tolerance),
+			'--state-retry-delay-seconds',
+			str(options.state_retry_delay_seconds),
+		]
+	)
 	if options.local_provider != LocalEvaluationProvider.AUTO:
 		arguments.extend(['--local-provider', options.local_provider.value])
 	if options.local_model:
@@ -523,6 +655,21 @@ def _subprocess_arguments(task_path: Path, options: EvaluationRunOptions, mode: 
 	return arguments
 
 
+def _subprocess_environment(options: EvaluationRunOptions, mode: EvaluationMode) -> dict[str, str]:
+	"""Build a child environment that cannot accidentally activate cloud auth in keyless local modes."""
+	environment = os.environ.copy()
+	environment['PYTHONPATH'] = os.pathsep.join(sys.path)
+	if mode in KEYLESS_EVALUATION_MODES and not options.use_cloud_browser:
+		environment.pop('BROWSER_USE_API_KEY', None)
+	return environment
+
+
+def _configure_process_environment(options: EvaluationRunOptions, mode: EvaluationMode) -> None:
+	"""Remove unused cloud credentials from direct keyless evaluation processes."""
+	if mode in KEYLESS_EVALUATION_MODES and not options.use_cloud_browser:
+		os.environ.pop('BROWSER_USE_API_KEY', None)
+
+
 async def run_task_subprocess(
 	task_path: Path,
 	semaphore: asyncio.Semaphore,
@@ -531,8 +678,7 @@ async def run_task_subprocess(
 ) -> EvaluationResult:
 	"""Run one task in a bounded isolated process and parse its structured result."""
 	async with semaphore:
-		environment = os.environ.copy()
-		environment['PYTHONPATH'] = os.pathsep.join(sys.path)
+		environment = _subprocess_environment(options, mode)
 		for attempt in range(1, options.subprocess_attempts + 1):
 			process = await asyncio.create_subprocess_exec(
 				*_subprocess_arguments(task_path, options, mode),
@@ -634,6 +780,14 @@ def discover_task_paths(options: EvaluationRunOptions) -> list[Path]:
 	return [Path(path) for path in sorted(glob.glob(str(options.task_dir / '*.yaml')))]
 
 
+def _task_source_id(task_path: Path) -> str | None:
+	"""Return a task source ID without allowing one invalid task to break a preflight summary."""
+	try:
+		return load_evaluation_task(task_path).source_id
+	except Exception:
+		return None
+
+
 def summarize_results(mode: EvaluationMode, results: list[EvaluationResult]) -> EvaluationSummary:
 	"""Build aggregate counts without treating unavailable providers as successes."""
 	return EvaluationSummary(
@@ -651,16 +805,26 @@ async def run_all_tasks(options: EvaluationRunOptions, mode: EvaluationMode) -> 
 	task_paths = discover_task_paths(options)
 	if not task_paths:
 		return EvaluationSummary(mode=mode, passed=0, failed=0, skipped=0, total=0)
+	browser_error = await browser_runtime_preflight_error(options)
+	if browser_error:
+		results = [
+			EvaluationResult(
+				file=task_path.name,
+				status='skipped',
+				explanation=browser_error,
+				mode=mode,
+				reason_code=EvaluationReasonCode.BROWSER_UNAVAILABLE,
+				source_id=_task_source_id(task_path),
+			)
+			for task_path in task_paths
+		]
+		return summarize_results(mode, results)
 	preflight_errors = provider_preflight_errors(options, mode)
 	if not preflight_errors:
 		preflight_errors = await provider_connectivity_errors(options, mode)
 	if preflight_errors:
-		results: list[EvaluationResult] = []
+		results = []
 		for task_path in task_paths:
-			try:
-				source_id = load_evaluation_task(task_path).source_id
-			except Exception:
-				source_id = None
 			results.append(
 				EvaluationResult(
 					file=task_path.name,
@@ -668,7 +832,7 @@ async def run_all_tasks(options: EvaluationRunOptions, mode: EvaluationMode) -> 
 					explanation='; '.join(preflight_errors),
 					mode=mode,
 					reason_code=EvaluationReasonCode.PROVIDER_UNAVAILABLE,
-					source_id=source_id,
+					source_id=_task_source_id(task_path),
 				)
 			)
 		return summarize_results(mode, results)
@@ -711,6 +875,14 @@ def print_summary(summary: EvaluationSummary) -> None:
 	print('DETAILED_RESULTS=' + json.dumps(detailed_results, ensure_ascii=False))
 
 
+def persist_evaluation_evidence(output_path: Path | None, payload: BaseModel) -> None:
+	"""Persist either one task result or an aggregate summary with identical JSON formatting."""
+	if output_path is None:
+		return
+	output_path.parent.mkdir(parents=True, exist_ok=True)
+	output_path.write_text(payload.model_dump_json(indent=2) + '\n', encoding='utf-8')
+
+
 def parse_options() -> EvaluationRunOptions:
 	"""Parse CLI inputs and merge explicit local/subscription environment defaults."""
 	parser = argparse.ArgumentParser(description=__doc__)
@@ -721,6 +893,19 @@ def parse_options() -> EvaluationRunOptions:
 	parser.add_argument('--history-dir', type=Path)
 	parser.add_argument('--max-parallel', type=int, default=int(os.getenv('EVALUATION_MAX_PARALLEL', '1')))
 	parser.add_argument('--disable-sandbox', action='store_true')
+	parser.add_argument('--executable-path', type=Path)
+	parser.add_argument('--use-cloud-browser', action='store_true')
+	parser.add_argument('--cloud-profile-id')
+	parser.add_argument('--cloud-proxy-country-code')
+	parser.add_argument('--cloud-timeout-minutes', type=int)
+	parser.add_argument('--skip-browser-preflight', action='store_true')
+	parser.add_argument('--minimum-page-load-wait-seconds', type=float, default=1.0)
+	parser.add_argument('--network-idle-wait-seconds', type=float, default=1.0)
+	parser.add_argument('--browser-launch-timeout-seconds', type=float, default=30.0)
+	parser.add_argument('--browser-shutdown-timeout-seconds', type=float, default=15.0)
+	parser.add_argument('--required-stable-states', type=int, default=2)
+	parser.add_argument('--state-stability-tolerance', type=float, default=0.2)
+	parser.add_argument('--state-retry-delay-seconds', type=float, default=1.0)
 	parser.add_argument(
 		'--local-provider',
 		choices=[provider.value for provider in LocalEvaluationProvider],
@@ -755,6 +940,19 @@ def parse_options() -> EvaluationRunOptions:
 		history_dir=arguments.history_dir,
 		max_parallel=arguments.max_parallel,
 		disable_sandbox=arguments.disable_sandbox,
+		executable_path=arguments.executable_path,
+		use_cloud_browser=arguments.use_cloud_browser,
+		cloud_profile_id=arguments.cloud_profile_id,
+		cloud_proxy_country_code=arguments.cloud_proxy_country_code,
+		cloud_timeout_minutes=arguments.cloud_timeout_minutes,
+		browser_preflight=not arguments.skip_browser_preflight,
+		minimum_page_load_wait_seconds=arguments.minimum_page_load_wait_seconds,
+		network_idle_wait_seconds=arguments.network_idle_wait_seconds,
+		browser_launch_timeout_seconds=arguments.browser_launch_timeout_seconds,
+		browser_shutdown_timeout_seconds=arguments.browser_shutdown_timeout_seconds,
+		required_stable_states=arguments.required_stable_states,
+		state_stability_tolerance=arguments.state_stability_tolerance,
+		state_retry_delay_seconds=arguments.state_retry_delay_seconds,
 		local_provider=LocalEvaluationProvider(arguments.local_provider),
 		local_model=arguments.local_model,
 		local_base_url=arguments.local_base_url,
@@ -777,10 +975,9 @@ def parse_options() -> EvaluationRunOptions:
 
 def quality_gate_thresholds(options: EvaluationRunOptions, summary: EvaluationSummary) -> tuple[float, int]:
 	"""Use strict keyless gates while preserving gradual model-quality thresholds."""
-	default_pass_rate = 1.0 if summary.mode in {EvaluationMode.DETERMINISTIC, EvaluationMode.REPLAY} else DEFAULT_MIN_PASS_RATE
-	default_executed = (
-		summary.total if summary.mode in {EvaluationMode.DETERMINISTIC, EvaluationMode.REPLAY} else DEFAULT_MIN_EXECUTED_TASKS
-	)
+	strict_modes = {EvaluationMode.HYBRID, EvaluationMode.DETERMINISTIC, EvaluationMode.REPLAY}
+	default_pass_rate = 1.0 if summary.mode in strict_modes else DEFAULT_MIN_PASS_RATE
+	default_executed = summary.total if summary.mode in strict_modes else DEFAULT_MIN_EXECUTED_TASKS
 	pass_rate = options.minimum_pass_rate
 	if pass_rate is None:
 		pass_rate = float(os.getenv('EVALUATION_MIN_PASS_RATE', str(default_pass_rate)))
@@ -794,16 +991,16 @@ def main() -> int:
 	"""Run selected evaluations, persist evidence, and enforce mode-specific quality gates."""
 	options = parse_options()
 	mode = resolve_evaluation_mode(options)
+	_configure_process_environment(options, mode)
 	if options.task_path is not None:
 		result = asyncio.run(run_single_task(options.task_path, options, mode))
+		persist_evaluation_evidence(options.output_path, result)
 		print(result.model_dump_json(), flush=True)
-		return 0
+		return 0 if result.success else 1
 
 	summary = asyncio.run(run_all_tasks(options, mode))
 	print_summary(summary)
-	if options.output_path is not None:
-		options.output_path.parent.mkdir(parents=True, exist_ok=True)
-		options.output_path.write_text(summary.model_dump_json(indent=2) + '\n', encoding='utf-8')
+	persist_evaluation_evidence(options.output_path, summary)
 
 	minimum_pass_rate, minimum_executed_tasks = quality_gate_thresholds(options, summary)
 	gate_errors = summary.quality_gate_errors(

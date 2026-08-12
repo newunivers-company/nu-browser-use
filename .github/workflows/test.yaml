@@ -89,7 +89,6 @@ jobs:
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       AZURE_OPENAI_KEY: ${{ secrets.AZURE_OPENAI_KEY }}
       AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
-      BROWSER_USE_API_KEY: ${{ secrets.BROWSER_USE_API_KEY }}
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
     strategy:
       matrix:
@@ -271,6 +270,8 @@ jobs:
           if-no-files-found: error
 
   evaluate-tasks-cloud:
+    # Legacy compatibility lane: the project default and required CI are keyless/local.
+    if: ${{ false }}
     needs: setup-chromium
     runs-on: ubuntu-latest
     timeout-minutes: 8  # Allow more time for agent eval
@@ -287,19 +288,14 @@ jobs:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-      BROWSER_USE_API_KEY: ${{ secrets.BROWSER_USE_API_KEY }}
       EVALUATION_MIN_PASS_RATE: '0.60'
       EVALUATION_MIN_EXECUTED_TASKS: '3'
     steps:
-      - name: Check optional cloud evaluation credentials
+      - name: Mark legacy cloud evaluation unavailable
         id: cloud-credentials
         run: |
-          if [ -n "$BROWSER_USE_API_KEY" ] && [ -n "$GOOGLE_API_KEY" ]; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "Cloud evaluation skipped: BROWSER_USE_API_KEY and GOOGLE_API_KEY are not both configured."
-          fi
+          echo "available=false" >> "$GITHUB_OUTPUT"
+          echo "Legacy Browser Use Cloud evaluation is disabled; required CI uses the keyless hybrid lane."
 
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6

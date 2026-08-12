@@ -42,7 +42,7 @@ def resolve_agent_context(
 
 
 def resolve_default_llm(llm: BaseChatModel | None) -> BaseChatModel:
-	"""Return the configured LLM, defaulting to the browser-optimized model."""
+	"""Return the configured LLM, defaulting to the shared keyless runtime."""
 	if llm is not None:
 		return llm
 
@@ -53,9 +53,9 @@ def resolve_default_llm(llm: BaseChatModel | None) -> BaseChatModel:
 
 		return get_llm_by_name(CONFIG.DEFAULT_LLM)
 
-	from browser_use import ChatBrowserUse
+	from browser_use.runtime import resolve_runtime_llm
 
-	return ChatBrowserUse()
+	return resolve_runtime_llm()
 
 
 def resolve_llm_timeout(llm: BaseChatModel | Any) -> int:

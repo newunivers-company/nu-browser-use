@@ -15,6 +15,16 @@ AGENT_TASKS_DIR = TESTS_DIR / 'agent_tasks'
 MIND2WEB_DATASET_PATH = TESTS_DIR / 'mind2web_data' / 'processed.json'
 BROWSER_FIXTURES_DIR = Path(__file__).resolve().parent / 'browser'
 DATA_SOURCE_CATALOG_PATH = TESTS_DIR / 'data_sources.yaml'
+HIGH_DIFFICULTY_BROWSER_SOURCE_IDS = {
+	'amazon',
+	'discord_discovery',
+	'langsmith_hub',
+	'mastodon_explore',
+	'product_hunt',
+	'stack_overflow_hot',
+	'tiktok_explore',
+	'youtube_trending',
+}
 
 
 class Mind2WebTask(BaseModel):
@@ -69,6 +79,19 @@ def test_catalog_covers_all_behavioral_social_and_prompt_sources() -> None:
 		'Every behavioral source must have a live evaluation task and availability-only sources must not be '
 		'present in the live task set'
 	)
+
+
+def test_high_difficulty_browser_sources_define_semantic_contracts() -> None:
+	"""Keep target fidelity and meaningful rendered-evidence requirements explicit."""
+	catalog = load_data_source_catalog(DATA_SOURCE_CATALOG_PATH)
+	for source_id in HIGH_DIFFICULTY_BROWSER_SOURCE_IDS:
+		contract = catalog.by_id[source_id].browser_contract
+		assert contract.allowed_final_path_prefixes, f'{source_id} must constrain its final browser path'
+		assert contract.expected_title_markers, f'{source_id} must declare expected title evidence'
+		assert contract.required_content_markers, f'{source_id} must declare rendered content evidence'
+		assert contract.minimum_visible_text_chars >= 100
+		assert contract.minimum_meaningful_elements >= 3
+		assert contract.minimum_interactive_elements >= 1
 
 
 def test_mind2web_dataset_is_complete_well_formed_and_unique() -> None:

@@ -1,19 +1,19 @@
 """Regression tests for MCP and core Agent LLM policy alignment."""
 
-from browser_use.llm.browser_use.chat import ChatBrowserUse
 from browser_use.llm.openai.chat import ChatOpenAI
+from browser_use.llm.subscription_cli import ChatSubscriptionCLI, SubscriptionCLIProvider
 from browser_use.mcp.runtime import resolve_mcp_llm
 
 
-def test_mcp_defaults_to_chat_browser_use(monkeypatch) -> None:
-	"""Generated legacy placeholders must not override the core ChatBrowserUse default."""
+def test_mcp_defaults_to_shared_keyless_runtime(monkeypatch) -> None:
+	"""Generated legacy placeholders must not activate Browser Use Cloud authentication."""
 	monkeypatch.delenv('DEFAULT_LLM', raising=False)
-	monkeypatch.setenv('BROWSER_USE_API_KEY', 'test-browser-use-key')
+	monkeypatch.setenv('SUBSCRIPTION_LLM_PROVIDER', 'codex')
 
 	llm = resolve_mcp_llm({'model': 'gpt-4.1-mini', 'api_key': 'your-openai-api-key-here'})
 
-	assert isinstance(llm, ChatBrowserUse)
-	assert llm.model == 'bu-2-0'
+	assert isinstance(llm, ChatSubscriptionCLI)
+	assert llm.provider_name == SubscriptionCLIProvider.CODEX
 
 
 def test_mcp_preserves_explicit_openai_model_name() -> None:
@@ -39,12 +39,13 @@ def test_mcp_legacy_openai_key_without_model_uses_compatible_default() -> None:
 	assert llm.model == 'gpt-4o'
 
 
-def test_mcp_browser_use_override_preserves_provider_prefixed_model(monkeypatch) -> None:
-	"""MCP forwards new gateway model IDs without maintaining an allowlist."""
-	monkeypatch.setenv('BROWSER_USE_API_KEY', 'test-browser-use-key')
+def test_mcp_keyless_override_preserves_model_name(monkeypatch) -> None:
+	"""MCP forwards future model IDs to the selected keyless runtime without an allowlist."""
+	monkeypatch.setenv('SUBSCRIPTION_LLM_PROVIDER', 'claude')
 	model_name = 'provider/future-model-version'
 
 	llm = resolve_mcp_llm({}, model_override=model_name)
 
-	assert isinstance(llm, ChatBrowserUse)
+	assert isinstance(llm, ChatSubscriptionCLI)
+	assert llm.provider_name == SubscriptionCLIProvider.CLAUDE
 	assert llm.model == model_name

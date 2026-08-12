@@ -220,6 +220,13 @@ class FlatEnvConfig(BaseSettings):
 	AZURE_OPENAI_KEY: str = Field(default='')
 	SKIP_LLM_API_KEY_VERIFICATION: bool = Field(default=False)
 	DEFAULT_LLM: str = Field(default='')
+	BROWSER_USE_LLM_BACKEND: str = Field(default='auto')
+	SUBSCRIPTION_LLM_PROVIDER: str = Field(default='')
+	SUBSCRIPTION_LLM_MODEL: str = Field(default='default')
+	SUBSCRIPTION_LLM_TIMEOUT_SECONDS: float = Field(default=180.0)
+	KEYLESS_LLM_MODEL: str = Field(default='')
+	KEYLESS_LLM_BASE_URL: str = Field(default='')
+	KEYLESS_LLM_API_KEY: str = Field(default='local-keyless-runtime')
 
 	# Runtime hints
 	IN_DOCKER: bool | None = Field(default=None)
@@ -230,6 +237,8 @@ class FlatEnvConfig(BaseSettings):
 	# MCP-specific env vars
 	BROWSER_USE_CONFIG_PATH: str | None = Field(default=None)
 	BROWSER_USE_HEADLESS: bool | None = Field(default=None)
+	BROWSER_USE_EXECUTABLE_PATH: str | None = Field(default=None)
+	BROWSER_USE_CDP_URL: str | None = Field(default=None)
 	BROWSER_USE_ALLOWED_DOMAINS: str | None = Field(default=None)
 	BROWSER_USE_LLM_MODEL: str | None = Field(default=None)
 

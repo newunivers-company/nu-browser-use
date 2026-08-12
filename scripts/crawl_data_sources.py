@@ -91,6 +91,7 @@ class CrawlClassification(StrEnum):
 	CONTENT_RICH = 'content_rich'
 	SPARSE_HTML = 'sparse_html'
 	JAVASCRIPT_SHELL = 'javascript_shell'
+	TRUNCATED_HTML = 'truncated_html'
 	LOGIN_REDIRECT = 'login_redirect'
 	BLOCKED = 'blocked'
 	NON_HTML = 'non_html'
@@ -930,6 +931,8 @@ async def fetch_crawl_page(
 		final_url=fetch.final_url,
 		metrics=metrics,
 	)
+	if fetch.content_truncated and metrics is not None and fetch.status_code < 400:
+		classification = CrawlClassification.TRUNCATED_HTML
 	return CrawlPageResult(
 		requested_url=url,
 		final_url=fetch.final_url,
