@@ -174,7 +174,9 @@ sources:
     description: Ranked technical question feed with bot protection.
     browser_contract:
       allowed_final_path_prefixes: [/questions]
-      expected_title_markers: [Stack Overflow]
+      # The rendered title is sometimes empty mid-challenge; "Questions" matches both the
+      # real title ("Hot Questions - Stack Overflow") and the URL-derived fallback title.
+      expected_title_markers: [Questions]
       required_content_markers: [Questions]
       minimum_visible_text_chars: 100
       minimum_meaningful_elements: 5
@@ -240,6 +242,10 @@ sources:
     test_level: availability
     expected_http_statuses: [200, 429]
     description: Visual idea and trend discovery feed.
+    browser_contract:
+      # Pinterest redirects to a locale subdomain (for example kr.pinterest.com).
+      require_same_origin: false
+      allowed_final_path_prefixes: [/ideas]
 
   - id: discord_discovery
     name: Discord Server Discovery
@@ -488,3 +494,182 @@ sources:
     test_level: availability
     expected_http_statuses: [200, 403, 429]
     description: Official Midjourney image-prompt fundamentals and tips.
+  - id: wikipedia_current_events
+    name: Wikipedia Current Events
+    category: documentation
+    url: https://en.wikipedia.org/wiki/Portal:Current_events
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: Encyclopedic daily news digest with dense internal linking.
+
+  - id: wikinews_main
+    name: Wikinews Main Page
+    category: documentation
+    url: https://en.wikinews.org/wiki/Main_Page
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: Openly licensed collaborative news articles.
+
+  - id: arxiv_cs_ai_recent
+    name: arXiv cs.AI Recent
+    category: documentation
+    url: https://arxiv.org/list/cs.AI/recent
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200, 403]
+    description: Recent AI research paper listing with abstracts.
+
+  - id: mdn_web_docs
+    name: MDN Web Docs
+    category: documentation
+    url: https://developer.mozilla.org/en-US/docs/Web
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: Web platform reference documentation index.
+
+  - id: python_peps
+    name: Python Enhancement Proposals
+    category: documentation
+    url: https://peps.python.org/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: Python design document index with full proposal texts.
+
+  - id: rust_blog
+    name: Rust Language Blog
+    category: documentation
+    url: https://blog.rust-lang.org/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: Official language release and design announcements.
+
+  - id: github_blog
+    name: GitHub Engineering Blog
+    category: documentation
+    url: https://github.blog/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200, 403]
+    description: Platform engineering and product announcement articles.
+
+  - id: huggingface_blog
+    name: Hugging Face Blog
+    category: documentation
+    url: https://huggingface.co/blog
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: Machine learning tooling and model release articles.
+
+  - id: npr_text
+    name: NPR Text-Only News
+    category: documentation
+    url: https://text.npr.org/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: Deliberately lightweight text-only news headlines and articles.
+
+  - id: cnn_lite
+    name: CNN Lite
+    category: documentation
+    url: https://lite.cnn.com/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: Text-only breaking news headline listing.
+
+  - id: guardian_international
+    name: The Guardian International
+    category: documentation
+    url: https://www.theguardian.com/international
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200, 403]
+    description: International news front page with long-form links.
+
+  - id: aljazeera_news
+    name: Al Jazeera News
+    category: documentation
+    url: https://www.aljazeera.com/news/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200, 403]
+    description: Global news section front with article summaries.
+
+  - id: bbc_news
+    name: BBC News
+    category: documentation
+    url: https://www.bbc.com/news
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200, 403]
+    description: Broadcast news front page with topic sections.
+
+  - id: hn_ask
+    name: Hacker News Ask
+    category: social_media
+    url: https://news.ycombinator.com/ask
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: Community question-and-discussion thread listing.
+
+  - id: hn_show
+    name: Hacker News Show
+    category: social_media
+    url: https://news.ycombinator.com/show
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: Community project showcase thread listing.
+
+  - id: tildes_home
+    name: Tildes
+    category: social_media
+    url: https://tildes.net/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200, 403]
+    description: Non-commercial link-aggregation community front page.
+
+  - id: metafilter_home
+    name: MetaFilter
+    category: social_media
+    url: https://www.metafilter.com/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200, 403]
+    description: Long-running community weblog front page.
+
+  - id: slashdot_home
+    name: Slashdot
+    category: social_media
+    url: https://slashdot.org/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200, 403]
+    description: Technology news discussion community front page.
+
+  - id: superuser_questions
+    name: Super User Questions
+    category: social_media
+    url: https://superuser.com/questions
+    access: anti_bot_protected
+    test_level: availability
+    expected_http_statuses: [200, 403, 429]
+    description: Ranked computing question feed on the Stack Exchange network.
+
+  - id: books_to_scrape
+    name: Books to Scrape
+    category: test_site
+    url: https://books.toscrape.com/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: Stable public fixture for paginated product extraction.
