@@ -62,16 +62,22 @@ def make_state(*, title: str = 'Interactive page', selector_count: int = 1) -> B
 class FakeBrowserSession:
 	"""In-memory BrowserSessionProtocol implementation for isolated tests."""
 
-	def __init__(self, state: BrowserStateSummary, *, state_failure: Exception | None = None) -> None:
+	def __init__(
+		self,
+		state: BrowserStateSummary,
+		*,
+		state_failure: Exception | None = None,
+		kill_failure: Exception | None = None,
+	) -> None:
 		self.state = state
 		self.state_failure = state_failure
+		self.kill_failure = kill_failure
 		self.started = False
 		self.killed = False
 
-	async def start(self) -> BrowserSessionProtocol:
+	async def start(self) -> None:
 		"""Record a successful fake launch."""
 		self.started = True
-		return self
 
 	async def navigate_to(self, url: str, new_tab: bool = False) -> None:
 		"""Accept navigation without external I/O."""
@@ -98,6 +104,8 @@ class FakeBrowserSession:
 	async def kill(self) -> None:
 		"""Record deterministic shutdown."""
 		self.killed = True
+		if self.kill_failure is not None:
+			raise self.kill_failure
 
 
 class FakeSessionFactory:
@@ -141,6 +149,26 @@ class DelayedInteractiveSession(FakeBrowserSession):
 		self.state_calls += 1
 		if self.state_calls == 1:
 			return make_state(title='Loading shell', selector_count=0)
+		return self.state
+
+
+class RecoveredNonInteractiveSession(FakeBrowserSession):
+	"""Fail one capture before returning a valid non-interactive page state."""
+
+	def __init__(self) -> None:
+		super().__init__(make_state(title='Rendered document', selector_count=0))
+		self.state_calls = 0
+
+	async def get_browser_state_summary(
+		self,
+		include_screenshot: bool = True,
+		cached: bool = False,
+		include_recent_events: bool = False,
+	) -> BrowserStateSummary:
+		"""Return a transient error followed by a successful empty-selector state."""
+		self.state_calls += 1
+		if self.state_calls == 1:
+			raise ConnectionError('transient state capture failure')
 		return self.state
 
 
@@ -196,6 +224,44 @@ async def test_browser_probe_retries_initial_non_interactive_state() -> None:
 	assert result.selector_count == 2
 	assert session.state_calls == 2
 	assert session.killed is True
+
+
+async def test_browser_probe_clears_transient_capture_error_after_success() -> None:
+	"""A later valid state must not remain classified as an earlier capture failure."""
+	session = RecoveredNonInteractiveSession()
+	result = await inspect_browser_data_source(
+		make_source(test_level=DataSourceTestLevel.AVAILABILITY),
+		BrowserProbeOptions(state_retry_delay_seconds=0),
+		asyncio.Semaphore(1),
+		session_factory=FakeSessionFactory(session),
+	)
+
+	assert result.ok is True
+	assert result.classification == BrowserSourceClassification.NON_INTERACTIVE
+	assert result.state_capture_errors == []
+	assert result.error is None
+
+
+async def test_browser_probe_separates_cleanup_failure_from_source_result() -> None:
+	"""Cleanup failures are infrastructure evidence, not website classification errors."""
+	source = make_source()
+	result = await inspect_browser_data_source(
+		source,
+		BrowserProbeOptions(),
+		asyncio.Semaphore(1),
+		session_factory=FakeSessionFactory(
+			FakeBrowserSession(make_state(selector_count=2), kill_failure=TimeoutError('kill timed out'))
+		),
+	)
+	catalog = DataSourceCatalog(version=1, last_reviewed=date(2026, 8, 12), sources=[source])
+	summary = summarize_browser_results(catalog, [result], strict=False)
+
+	assert result.classification == BrowserSourceClassification.INTERACTIVE
+	assert result.ok is True
+	assert result.error is None
+	assert result.cleanup_error is not None and result.cleanup_error.startswith('kill:TimeoutError')
+	assert summary.infrastructure_failures == 1
+	assert summary.gate_failures == 1
 
 
 async def test_browser_catalog_retries_failed_source_in_fresh_session(tmp_path: Path) -> None:

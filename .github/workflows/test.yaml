@@ -177,6 +177,38 @@ jobs:
           retry_on: error
           command: pytest "tests/ci/${{ matrix.test_filename }}.py"
 
+  crawl-data-sources-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          activate-environment: true
+
+      - run: uv sync --locked --dev
+
+      - name: Run the bounded live crawl quality gate
+        run: |
+          uv run --no-sync python -m scripts.crawl_data_sources \
+            --source quotes_to_scrape \
+            --max-pages-per-source 2 \
+            --max-depth 1 \
+            --concurrency 1 \
+            --strict \
+            --output crawl-data-sources-smoke.json
+
+      - name: Upload crawl evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crawl-data-sources-smoke
+          path: crawl-data-sources-smoke.json
+          if-no-files-found: error
+
   evaluate-tasks-keyless:
     needs: setup-chromium
     runs-on: ubuntu-latest

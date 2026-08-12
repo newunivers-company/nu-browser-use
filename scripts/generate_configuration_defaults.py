@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Generate and verify documentation for public Agent and Browser defaults."""
 
 import argparse

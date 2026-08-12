@@ -66,6 +66,17 @@ uv run python -m scripts.crawl_data_sources \
 
 Use repeated `--source`, `--category`, or `--test-level` filters for targeted follow-up runs. The crawler excludes
 login, logout, registration, deletion, unsubscription, and Cloudflare email-protection routes from link traversal.
+Every requested source ID must exist and the combined filters must select at least one source. Each queued URL is
+checked against its origin's robots policy, public-network policy, and read-only route policy before fetching.
+Cross-origin redirects are recorded and stopped; they never establish a new crawl origin. Redirect targets are
+revalidated, private/loopback/link-local destinations are rejected, and tracking-only query parameters are removed
+from URL identity. Use `--allow-private-networks` only for isolated local fixtures.
+
+The command calculates a quality gate for behavioral sources by default and returns a nonzero exit status when that
+gate fails. Add `--strict` to include availability-only sources. Tune bounded aggregate requirements with
+`--minimum-pass-rate`, `--minimum-fetched-sources`, and `--maximum-fetch-error-rate`. JSON evidence records redirect
+chains, response truncation, declared content length, and whether a SHA-256 covers the full body or only its bounded
+prefix.
 
 ## Running the Tests
 

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Verify package, MCP release, configuration, and tool metadata stay synchronized."""
 
 import ast

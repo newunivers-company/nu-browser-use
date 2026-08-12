@@ -8,10 +8,11 @@ import json
 import tempfile
 import time
 from collections import Counter
+from collections.abc import Callable
 from datetime import datetime, timezone
 from enum import StrEnum
 from pathlib import Path
-from typing import Callable, Protocol
+from typing import Protocol
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -90,6 +91,10 @@ class BrowserDataSourceResult(BaseModel):
 	selector_count: int = Field(default=0, ge=0)
 	elapsed_ms: int = Field(ge=0)
 	state_error: str | None = None
+	browser_error: str | None = None
+	navigation_error: str | None = None
+	state_capture_errors: list[str] = Field(default_factory=list)
+	cleanup_error: str | None = None
 	error: str | None = None
 	attempts: int = Field(default=1, ge=1)
 	previous_failures: list[str] = Field(default_factory=list)
@@ -113,7 +118,7 @@ class BrowserProbeSummary(BaseModel):
 class BrowserSessionProtocol(Protocol):
 	"""Browser session surface required by the data-source probe."""
 
-	async def start(self) -> BrowserSessionProtocol:
+	async def start(self) -> None:
 		"""Start the browser session."""
 		...
 
@@ -189,11 +194,12 @@ def summarize_browser_results(
 ) -> BrowserProbeSummary:
 	"""Calculate contract pass counts and browser quality-gate failures."""
 	failed_results = [result for result in results if not result.ok]
-	gate_failures = [
-		result
+	gate_failure_source_ids = {
+		result.source_id
 		for result in failed_results
 		if strict or catalog.by_id[result.source_id].test_level == DataSourceTestLevel.BEHAVIORAL
-	]
+	}
+	gate_failure_source_ids.update(result.source_id for result in results if result.cleanup_error or result.browser_error)
 	classifications = Counter(result.classification for result in results)
 	return BrowserProbeSummary(
 		generated_at=datetime.now(timezone.utc),
@@ -202,10 +208,8 @@ def summarize_browser_results(
 		failed=len(failed_results),
 		reachable=sum(result.reachable for result in results),
 		actionable=sum(result.actionable for result in results),
-		infrastructure_failures=sum(
-			result.classification == BrowserSourceClassification.BROWSER_UNAVAILABLE for result in results
-		),
-		gate_failures=len(gate_failures),
+		infrastructure_failures=sum(bool(result.browser_error or result.cleanup_error) for result in results),
+		gate_failures=len(gate_failure_source_ids),
 		classifications=dict(classifications),
 		results=results,
 	)
@@ -225,7 +229,10 @@ async def inspect_browser_data_source(
 		title: str | None = None
 		selector_count = 0
 		state_error: str | None = None
-		errors: list[str] = []
+		browser_error: str | None = None
+		navigation_error: str | None = None
+		state_capture_errors: list[str] = []
+		cleanup_error: str | None = None
 
 		with tempfile.TemporaryDirectory(prefix=f'nu-browser-probe-{source.id}-') as profile_directory:
 			profile = BrowserProfile(
@@ -244,9 +251,8 @@ async def inspect_browser_data_source(
 						timeout=options.navigation_timeout_seconds,
 					)
 				except Exception as error:
-					errors.append(f'navigate:{type(error).__name__}: {error}')
+					navigation_error = f'navigate:{type(error).__name__}: {error}'
 
-				state_attempt_errors: list[str] = []
 				for attempt in range(options.state_attempts):
 					try:
 						state = await asyncio.wait_for(
@@ -257,30 +263,38 @@ async def inspect_browser_data_source(
 						title = state.title
 						selector_count = len(state.dom_state.selector_map)
 						state_error = state.state_error
+						state_capture_errors.clear()
 						if selector_count > 0 and state_error is None:
-							state_attempt_errors.clear()
 							break
 					except Exception as error:
-						state_attempt_errors.append(f'{type(error).__name__}: {error}')
+						state_capture_errors.append(f'{type(error).__name__}: {error}')
 					if attempt + 1 < options.state_attempts:
 						await asyncio.sleep(options.state_retry_delay_seconds)
 
-				if state_attempt_errors:
-					errors.append(f'state:{" | ".join(state_attempt_errors)}')
+				if state_capture_errors:
 					try:
 						final_url = await session.get_current_page_url()
 						title = await session.get_current_page_title()
 					except Exception:
 						pass
 			except Exception as error:
-				errors.append(f'start:{type(error).__name__}: {error}')
+				browser_error = f'start:{type(error).__name__}: {error}'
 			finally:
 				try:
 					await asyncio.wait_for(session.kill(), timeout=options.shutdown_timeout_seconds)
 				except Exception as error:
-					errors.append(f'kill:{type(error).__name__}: {error}')
+					cleanup_error = f'kill:{type(error).__name__}: {error}'
 
-		error_text = ' | '.join(errors) or None
+		source_errors = [
+			error
+			for error in (
+				browser_error,
+				navigation_error,
+				f'state:{" | ".join(state_capture_errors)}' if state_capture_errors else None,
+			)
+			if error
+		]
+		error_text = ' | '.join(source_errors) or None
 		classification = classify_browser_page(
 			final_url=final_url,
 			title=title,
@@ -305,6 +319,10 @@ async def inspect_browser_data_source(
 			selector_count=selector_count,
 			elapsed_ms=round((time.monotonic() - started_at) * 1000),
 			state_error=state_error,
+			browser_error=browser_error,
+			navigation_error=navigation_error,
+			state_capture_errors=state_capture_errors,
+			cleanup_error=cleanup_error,
 			error=error_text,
 		)
 
@@ -348,7 +366,9 @@ async def probe_browser_catalog(
 	)
 	results = list(results)
 	for attempt_number in range(2, options.source_attempts + 1):
-		failed_indices = [index for index, result in enumerate(results) if not result.ok]
+		failed_indices = [
+			index for index, result in enumerate(results) if not result.ok or result.cleanup_error or result.browser_error
+		]
 		if not failed_indices:
 			break
 		if options.source_retry_delay_seconds:
@@ -367,7 +387,12 @@ async def probe_browser_catalog(
 		)
 		for index, retry_result in zip(failed_indices, retry_results, strict=True):
 			previous_result = results[index]
-			previous_failure = previous_result.error or previous_result.state_error or previous_result.classification.value
+			previous_failure = (
+				previous_result.cleanup_error
+				or previous_result.error
+				or previous_result.state_error
+				or previous_result.classification.value
+			)
 			results[index] = retry_result.model_copy(
 				update={
 					'attempts': attempt_number,
@@ -386,7 +411,7 @@ def print_browser_probe_summary(summary: BrowserProbeSummary) -> None:
 	)
 	for result in summary.results:
 		status = 'PASS' if result.ok else 'FAIL'
-		detail = result.error or result.state_error or result.title or 'no page evidence'
+		detail = result.cleanup_error or result.error or result.state_error or result.title or 'no page evidence'
 		print(
 			f'{status:4}  {result.category.value:14}  {result.test_level.value:12}  '
 			f'{result.source_id:28}  {result.classification.value:15}  '
