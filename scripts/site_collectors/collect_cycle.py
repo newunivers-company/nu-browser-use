@@ -104,8 +104,9 @@ WEEKLY: list[tuple[str, list[str], int]] = [
 #   blocked on input        newtoki_watch — needs the rights-holder watchlist;
 #                           add it here the day that lands
 #   recon, not collection   promo_recon, newtoki_calibrate, login_source_probe,
-#                           promo_browser_collect — run by hand when a source's
-#                           shape is in question
+#                           promo_browser_collect, browser_upgrade_review — run
+#                           by hand when a source's shape, or what to build
+#                           next, is in question
 #   one-shot asset pulls    vigloo_assets, vigloo_episode_thumbs — posters and
 #                           episode stills are fetched once and cached; re-running
 #                           re-downloads images for no new signal
@@ -121,6 +122,7 @@ UNSCHEDULED_BY_DESIGN = {
 	'shotdeck_render_collect.py', 'dramabox_collect.py', 'vigloo_collect.py',
 	'newtoki_watch.py', 'promo_recon.py', 'newtoki_calibrate.py',
 	'login_source_probe.py', 'promo_browser_collect.py', 'munpia_collect.py',
+	'browser_upgrade_review.py',
 	'comfy_workflow_collect.py', 'fal_collect.py',
 	'vigloo_assets.py', 'vigloo_episode_thumbs.py',
 	'newtoki_market_intel.py', 'newtoki_work_meta.py',
