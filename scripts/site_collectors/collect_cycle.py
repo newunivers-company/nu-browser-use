@@ -79,6 +79,9 @@ WEEKLY: list[tuple[str, list[str], int]] = [
 	('vigloo_snapshot', [str(HERE / 'vigloo_snapshot.py')], 30),
 	('gdelt', [str(HERE / 'gdelt_collect.py')], 20),
 	('prompt_repos', [str(HERE / 'prompt_repo_collect.py')], 20),
+	# Browser-rendered listing, so weekly rather than daily: the cost is a real
+	# Chromium launch and the leaderboard does not turn over in a day.
+	('civitai_models', [str(HERE / 'civitai_browser_collect.py')], 30),
 	('source_harvest', [str(HERE / 'source_harvest.py')], 40),
 	('source_loop', [str(HERE / 'source_collect_loop.py')], 180),
 	# Browser-driven, so slowest and last: a hung page must not delay the rest.
