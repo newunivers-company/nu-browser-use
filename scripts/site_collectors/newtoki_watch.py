@@ -46,6 +46,12 @@ DEPTH (why each layer exists)
               never would.
   mirror      Piracy hosts rotate domains. The host that actually answered is
               recorded per run, so a dead watch is not mistaken for a clean one.
+  recent      Search is a title-only substring index, so a re-upload under a
+              genuinely different name is unreachable by any query. The recent
+              -uploads listing is read instead and every entry compared against
+              the watchlist; only matches are kept and everything else is
+              discarded unread. That is the opposite of cataloguing — we look
+              at the stream for our own names, we do not copy the stream.
   sections    The site runs four independent indexes — /webtoon, /manhwa,
               /novel, /anime — each searchable and each verified separately.
               Querying only /webtoon, as this did originally, made infringement
@@ -106,6 +112,23 @@ NONSENSE_QUERY = 'zzzqqxnotitle'
 # matcher tuning would have surfaced.
 SECTIONS = [s for s in os.environ.get('NEWTOKI_SECTIONS', 'webtoon,manhwa,novel,anime').split(',') if s]
 
+JS_READ_LISTING = r"""
+(() => {
+	const section = '__SECTION__';
+	const seen = new Set();
+	const out = [];
+	document.querySelectorAll('a[href*="/' + section + '/"]').forEach(a => {
+		const m = (a.getAttribute('href') || '').match(new RegExp('/' + section + '/(\\d+)$'));
+		if (!m) return;
+		const text = (a.textContent || '').replace(/\s+/g, ' ').trim();
+		if (!text || seen.has(m[1])) return;
+		seen.add(m[1]);
+		out.push({id: m[1], url: a.href, title: text.slice(0, 120)});
+	});
+	return JSON.stringify(out);
+})()
+"""
+
 JS_READ_RESULTS = r"""
 (() => {
 	const section = '__SECTION__';
@@ -140,7 +163,20 @@ JS_READ_EVIDENCE = r"""
 	const views = (body.match(/조회\s*([\d,]+)/g) || []).slice(0, 5);
 	return JSON.stringify({
 		url: location.href,
-		series_title: text(document.querySelector('.view-title, .toon-title, h1')),
+		// h1 is the site header, not the work. The work name is in og:title with
+		// a site suffix appended, and repeated in a bare h2. Recording the site
+		// name as the infringed title would make the evidence useless, since the
+		// title is what a notice identifies the work by.
+		series_title: (() => {
+			const og = document.querySelector('meta[property="og:title"]');
+			const raw = og ? (og.getAttribute('content') || '') : '';
+			const cleaned = raw.split(' - ')[0].trim();
+			if (cleaned) return cleaned;
+			const h2 = Array.from(document.querySelectorAll('h2'))
+				.map(el => (el.innerText || '').trim())
+				.filter(v => v && v.length < 100 && !/알림|공지/.test(v));
+			return h2[0] || null;
+		})(),
 		episode_count: episodes.length,
 		episode_min: episodes.length ? Math.min.apply(null, episodes) : null,
 		episode_max: episodes.length ? Math.max.apply(null, episodes) : null,
@@ -270,6 +306,24 @@ async def pick_host(session: BrowserSession) -> tuple[str | None, list[dict]]:
 	return None, tried
 
 
+async def scan_recent(session: BrowserSession, host: str, section: str, pages: int) -> list[dict]:
+	"""Read the recent-uploads listing. Entries are compared, never stored."""
+	found: list[dict] = []
+	for page in range(1, pages + 1):
+		url = f'{host}/{section}' + (f'?page={page}' if page > 1 else '')
+		try:
+			raw = await visit(session, url, JS_READ_LISTING.replace('__SECTION__', section))
+		except Exception as exc:  # noqa: BLE001
+			print(f'  {section} page {page}: {type(exc).__name__}')
+			break
+		rows = json.loads(raw) if raw else []
+		if not rows:
+			break
+		found.extend({**row, 'section': section} for row in rows)
+		await asyncio.sleep(1.5)
+	return found
+
+
 async def check_detector(session: BrowserSession, host: str, sections: list[str]) -> dict:
 	"""Prove the search path works in EVERY section before trusting any zero.
 
@@ -330,6 +384,7 @@ async def main() -> None:
 	parser.add_argument('--self-test', action='store_true', help='run the control queries only')
 	parser.add_argument('--headful', action='store_true')
 	parser.add_argument('--no-fragments', action='store_true', help='whole titles only; skip substring probes')
+	parser.add_argument('--recent', type=int, metavar='PAGES', help='also scan N pages of each recent-uploads listing against the watchlist')
 	args = parser.parse_args()
 	use_fragments = not args.no_fragments
 
@@ -389,6 +444,31 @@ async def main() -> None:
 					print(f'[control] evidence extraction: {detector["evidence_status"].upper()}')
 					print(f'  episodes={evidence.get("episode_count")} range={evidence.get("episode_min")}-{evidence.get("episode_max")} dates={len(evidence.get("upload_dates") or [])}')
 					print(f'  populated fields: {", ".join(populated)}')
+
+			# Recent-uploads pass. The listing is read once per section, compared
+			# against the watchlist, and then dropped: only entries matching one
+			# of our works survive into `recent_hits`. Nothing else is retained.
+			recent_hits: list[dict] = []
+			if args.recent and host and works:
+				scanned_rows = 0
+				for section in SECTIONS:
+					rows = await scan_recent(session, host, section, args.recent)
+					scanned_rows += len(rows)
+					for row in rows:
+						for work in works:
+							best_kind, best_score = 'none', 0.0
+							for alias in work['queries']:
+								kind, score = classify(normalize(alias), row['title'])
+								if kind == 'exact' or score > best_score:
+									best_kind, best_score = kind, max(best_score, score)
+								if best_kind == 'exact':
+									break
+							if best_kind in ('exact', 'near'):
+								recent_hits.append({**row, 'our_title': work['title'], 'match': best_kind, 'score': round(best_score, 3)})
+								break
+				print(f'[recent] compared {scanned_rows} listed entries against {len(works)} works -> {len(recent_hits)} match')
+				for hit in recent_hits:
+					print(f'  {hit["match"]:5} {hit["our_title"][:28]:30} <- {hit["section"]}/{hit["id"]} score={hit["score"]}')
 
 			targets = works if host else []
 			for index, work in enumerate(targets, 1):
@@ -471,7 +551,9 @@ async def main() -> None:
 				handle.write(json.dumps(record, ensure_ascii=False) + '\n')
 	(OUT_DIR / 'recurrence.json').write_text(json.dumps(recurrence, ensure_ascii=False, indent=2), encoding='utf-8')
 	(runs_dir / f'{today}.json').write_text(
-		json.dumps({'date': today, 'host': host, **detector, 'works': per_work, 'sightings': len(sightings)}, ensure_ascii=False, indent=2),
+		json.dumps({'date': today, 'host': host, **detector, 'works': per_work, 'sightings': len(sightings),
+					'recent_scan': {'pages': args.recent, 'matches': recent_hits} if args.recent else None},
+					ensure_ascii=False, indent=2),
 		encoding='utf-8',
 	)
 
