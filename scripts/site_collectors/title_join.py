@@ -41,6 +41,7 @@ Output (JOIN_OUT, default ~/join_export):
   multi_platform.csv  - only works seen on 2+ platforms
   near_matches.csv    - candidate merges for human review, NOT applied
   genre_cooccurrence.csv - platform label pairs on the same work
+  cross_platform_ratios.csv - counter spread per platform pair
 """
 
 from __future__ import annotations
@@ -50,6 +51,7 @@ import csv
 import datetime as dt
 import json
 import os
+import statistics
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -188,6 +190,36 @@ def near_candidates(works: list[dict], limit: int) -> list[dict]:
 	return sorted(out, key=lambda r: -r['score'])[:limit]
 
 
+def ratio_report(works: list[dict]) -> list[dict]:
+	"""Per platform pair, how far apart the two counters sit on the same work.
+
+	This is the evidence for refusing to combine metrics. If two platforms
+	counted the same thing, their ratio on shared works would cluster; a wide
+	spread means no conversion factor exists and any normalization would be
+	invented.
+	"""
+	ratios: dict[tuple[str, str], list[float]] = defaultdict(list)
+	for work in works:
+		if work['platform_count'] < 2:
+			continue
+		platforms = work['platforms']
+		for i, left in enumerate(platforms):
+			for right in platforms[i + 1 :]:
+				left_views = work['records'][left]['views']
+				right_views = work['records'][right]['views']
+				if isinstance(left_views, int) and isinstance(right_views, int) and left_views and right_views:
+					ratios[(left, right)].append(max(left_views, right_views) / min(left_views, right_views))
+	rows = []
+	for (left, right), values in sorted(ratios.items(), key=lambda kv: -len(kv[1])):
+		values.sort()
+		rows.append({
+			'platform_a': left, 'platform_b': right, 'shared_works': len(values),
+			'min_ratio': round(values[0], 2), 'median_ratio': round(statistics.median(values), 2),
+			'max_ratio': round(values[-1], 2), 'spread': round(values[-1] / values[0], 1) if values[0] else None,
+		})
+	return rows
+
+
 def write_outputs(works: list[dict], near: list[dict], now: str) -> None:
 	OUT_DIR.mkdir(parents=True, exist_ok=True)
 	(OUT_DIR / 'works.json').write_text(json.dumps({'built_at': now, 'works': works}, ensure_ascii=False, indent=2), encoding='utf-8')
@@ -215,6 +247,12 @@ def write_outputs(works: list[dict], near: list[dict], now: str) -> None:
 				+ [records.get(p, {}).get('views') for p in platforms]
 				+ [' | '.join(records.get(p, {}).get('genres') or []) for p in platforms]
 			)
+
+	ratios = ratio_report(works)
+	with (OUT_DIR / 'cross_platform_ratios.csv').open('w', newline='', encoding='utf-8-sig') as handle:
+		writer = csv.DictWriter(handle, fieldnames=['platform_a', 'platform_b', 'shared_works', 'min_ratio', 'median_ratio', 'max_ratio', 'spread'])
+		writer.writeheader()
+		writer.writerows(ratios)
 
 	with (OUT_DIR / 'near_matches.csv').open('w', newline='', encoding='utf-8-sig') as handle:
 		writer = csv.DictWriter(handle, fieldnames=['score', 'left_platform', 'left_title', 'right_platform', 'right_title'])
@@ -268,6 +306,15 @@ def main() -> None:
 		for work in multi[:15]:
 			views = ', '.join(f'{p}={work["records"][p]["views"]:,}' if isinstance(work['records'][p]['views'], int) else f'{p}=?' for p in work['platforms'])
 			print(f'  {work["title"][:46]:48} {views}')
+
+	ratios = [r for r in ratio_report(works) if r['shared_works'] >= 3]
+	if ratios:
+		print('\nview-count ratio on shared works (why metrics are never combined):')
+		for row in ratios:
+			print(f'  {row["platform_a"]}/{row["platform_b"]}  n={row["shared_works"]:<3} median={row["median_ratio"]}x  range {row["min_ratio"]}x-{row["max_ratio"]}x  spread {row["spread"]}x')
+		if any(r['spread'] and r['spread'] > 10 for r in ratios):
+			print('  no stable conversion factor — these counters measure different things')
+
 	print(f'\nDONE -> {OUT_DIR}')
 
 

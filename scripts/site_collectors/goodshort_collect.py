@@ -17,7 +17,8 @@ weekly view counts rather than to a rail position.
 
 robots.txt allows `/` for `*`; only /subscription, /results and /pay are
 disallowed, none of which we touch. No sitemap exists (404), so slugs come from
-the home rails and tag pages.
+a breadth-first walk of the tag and
+genre listings, which name each other transitively.
 
 Output (GOODSHORT_OUT, default ~/goodshort_export):
   books.json / books.csv
@@ -49,6 +50,10 @@ OUT_DIR = Path(os.environ.get('GOODSHORT_OUT', str(Path.home() / 'goodshort_expo
 STATE_KEY = 'window.__INITIAL_STATE__='
 DRAMA_RE = re.compile(r'/drama/([a-z0-9][a-z0-9-]*-\d+)')
 TAG_RE = re.compile(r'/tag/([a-z0-9][a-z0-9-]*)')
+# Genre listings are a second frontier alongside tags, and every tag page names
+# ~38 further tags, so the tag frontier is transitive rather than flat: reading
+# only the home page's tags (the original behaviour) sampled one hop of it.
+GENRE_RE = re.compile(r'/dramas/([a-z0-9][a-z0-9-]*)')
 CONCURRENCY = 5
 DELAY = 0.35
 
@@ -100,21 +105,41 @@ async def fetch(session: aiohttp.ClientSession, url: str) -> str | None:
 		return None
 
 
-async def discover_slugs(session: aiohttp.ClientSession, extra_tags: int) -> set[str]:
-	"""Home rails give ~45 slugs; tag pages widen coverage without a sitemap."""
+async def discover_slugs(session: aiohttp.ClientSession, page_budget: int) -> set[str]:
+	"""Breadth-first over tag and genre listings until the budget is spent.
+
+	There is no sitemap (404), so the catalog has to be walked. Listing pages
+	name further listing pages, so the frontier is explored transitively and
+	the budget caps total requests rather than capping the first hop.
+	"""
 	slugs: set[str] = set()
 	home = await fetch(session, BASE + '/')
 	if not home:
 		return slugs
 	slugs |= set(DRAMA_RE.findall(home))
-	tags = sorted(set(TAG_RE.findall(home)))[:extra_tags]
-	for tag in tags:
-		page = await fetch(session, f'{BASE}/tag/{tag}')
-		if page:
-			before = len(slugs)
-			slugs |= set(DRAMA_RE.findall(page))
-			print(f'  tag/{tag}: +{len(slugs) - before} (total {len(slugs)})')
+	print(f'  home: {len(slugs)} slugs')
+
+	seen_pages: set[str] = set()
+	frontier: list[str] = [f'/dramas/{g}' for g in sorted(set(GENRE_RE.findall(home)))]
+	frontier += [f'/tag/{t}' for t in sorted(set(TAG_RE.findall(home)))]
+	while frontier and len(seen_pages) < page_budget:
+		path = frontier.pop(0)
+		if path in seen_pages:
+			continue
+		seen_pages.add(path)
+		page = await fetch(session, BASE + path)
 		await asyncio.sleep(DELAY)
+		if not page:
+			continue
+		before = len(slugs)
+		slugs |= set(DRAMA_RE.findall(page))
+		for tag in sorted(set(TAG_RE.findall(page))):
+			candidate = f'/tag/{tag}'
+			if candidate not in seen_pages:
+				frontier.append(candidate)
+		if len(slugs) != before:
+			print(f'  {path}: +{len(slugs) - before} (total {len(slugs)}, {len(seen_pages)}/{page_budget} pages, frontier {len(frontier)})')
+	print(f'  walked {len(seen_pages)} listing pages')
 	return slugs
 
 
@@ -195,14 +220,14 @@ def write_outputs(rows: list[dict], now: str) -> None:
 
 async def main() -> None:
 	parser = argparse.ArgumentParser()
-	parser.add_argument('--tags', type=int, default=12, help='how many tag pages to sweep for extra slugs')
+	parser.add_argument('--pages', type=int, default=60, help='listing-page budget for the breadth-first walk')
 	parser.add_argument('--limit', type=int, help='cap detail fetches (smoke tests)')
 	args = parser.parse_args()
 
 	now = dt.datetime.now(dt.timezone.utc).isoformat()
 	async with aiohttp.ClientSession(headers=HEADERS) as session:
 		print('[1/2] discovering slugs')
-		slugs = sorted(await discover_slugs(session, args.tags))
+		slugs = sorted(await discover_slugs(session, args.pages))
 		if args.limit:
 			slugs = slugs[: args.limit]
 		print(f'      {len(slugs)} slugs')
