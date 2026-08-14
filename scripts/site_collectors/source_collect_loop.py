@@ -9,7 +9,7 @@ Per-source channel handling:
   feed              RSS/Atom entries -> title, link, dates, author, categories
   sitemap           URL inventory    -> loc, lastmod, changefreq, priority
   json_ld           typed entities   -> name, url, dates, numeric properties
-  framework_state   recorded as needing a bespoke collector; not guessed at
+  framework_state   __NEXT_DATA__ / __NUXT_DATA__ mined for item-shaped nodes
 
 METADATA ONLY — WHAT IS DROPPED AND WHY
 Feeds routinely carry the whole article in `content:encoded` or `<content>`,
@@ -57,12 +57,24 @@ HEADERS = {
 	'Accept-Language': 'en-US,en;q=0.9,ko;q=0.8',
 }
 DELAY = 1.0
-ITEM_CAP = 300
+ITEM_CAP = 2000
 SNIPPET = 200
-COLLECTABLE = {'feed', 'sitemap', 'json_ld'}
+SITEMAP_CHILDREN = 12  # bounded: a whole sitemap tree is a crawl, not a read
+FEEDS_PER_SOURCE = 6
+# Framework state blobs can embed article bodies, so any string longer than this
+# is dropped outright rather than snipped — a body has no business in a catalog.
+STATE_STRING_MAX = 200
+COLLECTABLE = {'feed', 'sitemap', 'json_ld', 'framework_state'}
+# robots.txt absent means no rule was published, which under RFC 9309 is not a
+# restriction. Treating that as a block excluded sources nobody asked us to skip.
+PERMITTED_ROBOTS = {'allow', 'unknown'}
 # Full-text carriers. Dropped before write — see the module docstring.
 BODY_FIELDS = {'content', 'content:encoded', 'encoded', 'articlebody', 'text', 'body', 'summary_detail'}
 LD_RE = re.compile(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', re.S | re.I)
+NEXT_RE = re.compile(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.S)
+NUXT_RE = re.compile(r'<script[^>]*id="__NUXT_DATA__"[^>]*>(.*?)</script>', re.S)
+TITLE_KEYS = ('title', 'name', 'headline', 'bookName', 'seriesName', 'displayName')
+URL_KEYS = ('url', 'link', 'href', 'permalink', 'slug', 'canonicalUrl')
 NS = {'atom': 'http://www.w3.org/2005/Atom', 'sm': 'http://www.sitemaps.org/schemas/sitemap/0.9'}
 
 
@@ -167,6 +179,58 @@ def parse_json_ld(body: str, base: str) -> list[dict]:
 	return items
 
 
+def mine_state(blob: object, base: str, out: list[dict], depth: int = 0) -> None:
+	"""Walk a framework state blob for item-shaped nodes.
+
+	A node counts as an item when it carries both a title-ish and a url-ish
+	key. Long strings are dropped rather than truncated: news and publisher
+	sites embed whole articles in these blobs, and a catalog has no use for
+	them.
+	"""
+	if depth > 8 or len(out) >= ITEM_CAP:
+		return
+	if isinstance(blob, list):
+		for node in blob[:200]:
+			mine_state(node, base, out, depth + 1)
+		return
+	if not isinstance(blob, dict):
+		return
+	title = next((blob[k] for k in TITLE_KEYS if isinstance(blob.get(k), str) and blob[k].strip()), None)
+	url = next((blob[k] for k in URL_KEYS if isinstance(blob.get(k), str) and blob[k].strip()), None)
+	if title and url and len(title) <= STATE_STRING_MAX:
+		out.append({
+			'title': title,
+			'url': urljoin(base, url),
+			'type': blob.get('@type') if isinstance(blob.get('@type'), str) else blob.get('type') if isinstance(blob.get('type'), str) else None,
+			'published': next((blob[k] for k in ('datePublished', 'publishedAt', 'createdAt', 'shelfTime', 'date') if isinstance(blob.get(k), str)), None),
+			'numeric': {k: v for k, v in blob.items() if isinstance(v, (int, float)) and k.lower() not in BODY_FIELDS} or None,
+		})
+	for value in blob.values():
+		mine_state(value, base, out, depth + 1)
+
+
+def parse_framework_state(body: str, base: str) -> list[dict]:
+	items: list[dict] = []
+	for pattern in (NEXT_RE, NUXT_RE):
+		match = pattern.search(body)
+		if not match:
+			continue
+		try:
+			blob = json.loads(match.group(1))
+		except json.JSONDecodeError:
+			continue
+		mine_state(blob, base, items)
+	# Deduplicate within the page; the caller dedupes against what is on disk.
+	seen: set[str] = set()
+	unique = []
+	for item in items:
+		if item['url'] in seen:
+			continue
+		seen.add(item['url'])
+		unique.append(item)
+	return unique
+
+
 def scrub(item: dict) -> dict:
 	"""Last line of defence: no body-bearing key ever reaches disk."""
 	clean = {k: v for k, v in item.items() if k.lower() not in BODY_FIELDS}
@@ -221,7 +285,7 @@ async def collect_source(session: aiohttp.ClientSession, source: dict, state: di
 	base = source['url']
 	targets: list[str]
 	if channel == 'feed':
-		targets = source.get('feeds', [])[:3]
+		targets = source.get('feeds', [])[:FEEDS_PER_SOURCE]
 	elif channel == 'sitemap':
 		parts = urlsplit(base)
 		targets = [f'{parts.scheme}://{parts.netloc}/sitemap.xml']
@@ -241,11 +305,14 @@ async def collect_source(session: aiohttp.ClientSession, source: dict, state: di
 			continue
 		if channel == 'feed':
 			items.extend(parse_feed(body, target))
+		elif channel == 'framework_state':
+			items.extend(parse_framework_state(body, target))
 		elif channel == 'sitemap':
 			entries, nested = parse_sitemap(body)
 			items.extend(entries)
-			# One level of nesting only; a full sitemap tree is a crawl, not a read.
-			for nested_url in nested[:2]:
+			# One level of nesting, bounded child count: enough to reach a real
+			# inventory without walking an entire site.
+			for nested_url in nested[:SITEMAP_CHILDREN]:
 				nested_status, nested_body, _ = await fetch(session, nested_url, {})
 				if nested_status == 200 and nested_body:
 					items.extend(parse_sitemap(nested_body)[0])
@@ -294,7 +361,7 @@ async def main() -> None:
 	dossiers = json.loads(dossiers_path.read_text(encoding='utf-8'))['sources']
 
 	# Catalog order is preserved; only robots-clean sources with a real channel.
-	queue = [d for d in dossiers if d.get('channel') in COLLECTABLE and d.get('robots') == 'allow']
+	queue = [d for d in dossiers if d.get('channel') in COLLECTABLE and d.get('robots') in PERMITTED_ROBOTS]
 	if args.only_channel:
 		queue = [d for d in queue if d['channel'] == args.only_channel]
 	skipped_named = [d['id'] for d in dossiers if d.get('robots') == 'named_ai_block']
