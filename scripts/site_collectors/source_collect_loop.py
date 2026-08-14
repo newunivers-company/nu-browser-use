@@ -58,9 +58,9 @@ HEADERS = {
 	'Accept-Language': 'en-US,en;q=0.9,ko;q=0.8',
 }
 DELAY = 1.0
-ITEM_CAP = 20000
+ITEM_CAP = 200000
 SNIPPET = 200
-SITEMAP_CHILDREN = 40  # bounded: a whole sitemap tree is a crawl, not a read
+SITEMAP_CHILDREN = 250  # still bounded, but deep enough to reach a full inventory
 FEEDS_PER_SOURCE = 6
 # Framework state blobs can embed article bodies, so any string longer than this
 # is dropped outright rather than snipped — a body has no business in a catalog.
@@ -75,7 +75,11 @@ LD_RE = re.compile(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', re.S
 NEXT_RE = re.compile(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.S)
 NUXT_RE = re.compile(r'<script[^>]*id="__NUXT_DATA__"[^>]*>(.*?)</script>', re.S)
 TITLE_KEYS = ('title', 'name', 'headline', 'bookName', 'seriesName', 'displayName')
-URL_KEYS = ('url', 'link', 'href', 'permalink', 'slug', 'canonicalUrl')
+URL_KEYS = ('url', 'link', 'href', 'permalink', 'canonicalUrl')
+# Framework payloads usually carry an id and build the URL at render time —
+# DramaBox ships bookId/bookName/viewCount with no url anywhere in the node.
+# Requiring a URL threw those away, so an id is accepted as identity instead.
+ID_KEYS = ('id', 'bookId', 'seriesId', 'contentId', 'workId', 'slug', 'uuid', 'code')
 NS = {'atom': 'http://www.w3.org/2005/Atom', 'sm': 'http://www.sitemaps.org/schemas/sitemap/0.9'}
 SITEMAP_DIRECTIVE_RE = re.compile(r'(?im)^\s*sitemap:\s*(\S+)')
 
@@ -254,10 +258,13 @@ def mine_state(blob: object, base: str, out: list[dict], depth: int = 0) -> None
 		return
 	title = next((blob[k] for k in TITLE_KEYS if isinstance(blob.get(k), str) and blob[k].strip()), None)
 	url = next((blob[k] for k in URL_KEYS if isinstance(blob.get(k), str) and blob[k].strip()), None)
-	if title and url and len(title) <= STATE_STRING_MAX:
+	item_id = next((str(blob[k]) for k in ID_KEYS if isinstance(blob.get(k), (str, int)) and str(blob[k]).strip()), None)
+	if title and (url or item_id) and len(title) <= STATE_STRING_MAX:
 		out.append({
 			'title': title,
-			'url': urljoin(base, url),
+			'url': urljoin(base, url) if url else None,
+			'item_id': item_id,
+			'origin': base if not url else None,
 			'type': blob.get('@type') if isinstance(blob.get('@type'), str) else blob.get('type') if isinstance(blob.get('type'), str) else None,
 			'published': next((blob[k] for k in ('datePublished', 'publishedAt', 'createdAt', 'shelfTime', 'date') if isinstance(blob.get(k), str)), None),
 			'numeric': {k: v for k, v in blob.items() if isinstance(v, (int, float)) and k.lower() not in BODY_FIELDS} or None,
@@ -281,11 +288,21 @@ def parse_framework_state(body: str, base: str) -> list[dict]:
 	seen: set[str] = set()
 	unique = []
 	for item in items:
-		if item['url'] in seen:
+		key = item_key(item)
+		if not key or key in seen:
 			continue
-		seen.add(item['url'])
+		seen.add(key)
 		unique.append(item)
 	return unique
+
+
+def item_key(item: dict) -> str | None:
+	"""Dedup identity: the URL when there is one, otherwise origin plus id."""
+	if item.get('url'):
+		return item['url']
+	if item.get('item_id'):
+		return f'{item.get("origin") or ""}#{item["item_id"]}'
+	return None
 
 
 def scrub(item: dict) -> dict:
@@ -312,9 +329,11 @@ def existing_urls(source_id: str) -> set[str]:
 	urls = set()
 	for line in path.open(encoding='utf-8'):
 		try:
-			urls.add(json.loads(line)['url'])
+			key = item_key(json.loads(line))
 		except Exception:  # noqa: BLE001
 			continue
+		if key:
+			urls.add(key)
 	return urls
 
 
@@ -394,10 +413,10 @@ async def collect_source(session: aiohttp.ClientSession, source: dict, state: di
 	seen = existing_urls(source_id)
 	fresh = []
 	for item in items[:ITEM_CAP]:
-		url = item.get('url')
-		if not url or url in seen:
+		key = item_key(item)
+		if not key or key in seen:
 			continue
-		seen.add(url)
+		seen.add(key)
 		fresh.append(scrub({**item, 'source_id': source_id, 'observed_at': dt.datetime.now(dt.timezone.utc).isoformat()}))
 
 	if fresh:
