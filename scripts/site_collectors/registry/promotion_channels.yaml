@@ -418,13 +418,20 @@ channels:
   - url: https://www.goodshort.com/
     brand: goodshort
     channel_type: website
-    access_tier: T1
-    robots_verdict: unknown
+    access_tier: T0
+    robots_verdict: allow
     official_status: verified
     official_evidence: appstore_seller_url
     consumer_or_b2b: consumer
     collect: true
-    notes: SPA, sitemap.xml 404 -> CDP needed
+    notes: >-
+      Reclassified T1 -> T0 by promo_recon on 2026-08-14. Looks like an SPA but
+      is server-rendered: HAR showed 73 requests and zero catalog JSON (acf =
+      poster CDN, acfs3 = JS bundle, api.xintaicz.cn = Sensors Analytics). The
+      catalog lives in window.__INITIAL_STATE__, so goodshort_collect.py reads
+      it over plain HTTP. 461 titles with a full engagement panel (viewCount,
+      likeCount, followCount, commentCount, inLibraryNum, ratings) plus genre
+      and trope taxonomies. sitemap 404, so slugs come from home + tag pages.
   - url: https://www.linkedin.com/company/goodshort
     company: newreading
     channel_type: linkedin
