@@ -2059,3 +2059,113 @@ sources:
     test_level: availability
     expected_http_statuses: [200]
     description: "Cross-agency K-pop comeback/debut/MV/chart news aggregator (English global)."
+
+  # --- Style & Fashion Intelligence (gap fill) ---
+
+  - id: wgsn
+    name: "WGSN"
+    category: documentation
+    url: https://www.wgsn.com/
+    access: login_required
+    test_level: availability
+    expected_http_statuses: [200, 401, 403]
+    description: "Multi-season forecast (color/material/silhouette + social/sentiment/search/shows/shelf); PAID SaaS, registry-only licensing decision."
+
+  - id: heuritech
+    name: "Heuritech"
+    category: documentation
+    url: https://heuritech.com/
+    access: login_required
+    test_level: availability
+    expected_http_statuses: [200, 401, 403]
+    description: "AI social-image analysis (~2,000 attributes) for actual-adoption trend; PAID SaaS/API, licensing decision."
+
+  - id: trendalytics
+    name: "Trendalytics"
+    category: documentation
+    url: https://www.trendalytics.co/
+    access: login_required
+    test_level: availability
+    expected_http_statuses: [200, 401, 403]
+    description: "Search+social+TikTok velocity trend intelligence (TrendPulse); PAID SaaS, licensing decision."
+
+  - id: edited
+    name: "EDITED"
+    category: documentation
+    url: https://edited.com/
+    access: login_required
+    test_level: availability
+    expected_http_statuses: [200, 401, 403]
+    description: "Real-time retailer assortment/price/sell-through validation; PAID SaaS (MCP integration), licensing decision."
+
+  - id: launchmetrics
+    name: "Launchmetrics"
+    category: documentation
+    url: https://www.launchmetrics.com/
+    access: login_required
+    test_level: availability
+    expected_http_statuses: [200, 401, 403]
+    description: "Brand/media/influencer impact (who drives a trend); PAID SaaS, licensing decision."
+
+  - id: vestiaire_collective
+    name: "Vestiaire Collective"
+    category: commerce
+    url: https://www.vestiairecollective.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Luxury resale longevity by country/generation for durable-style analysis."
+
+  - id: xiaohongshu
+    name: "Xiaohongshu"
+    category: social_media
+    url: https://www.xiaohongshu.com/
+    access: anti_bot_protected
+    test_level: availability
+    expected_http_statuses: [200, 403, 503]
+    description: "Chinese visual style discovery; P2 low-frequency/partner (no clean public API)."
+
+  - id: douyin_commerce
+    name: "Douyin Commerce Trends"
+    category: documentation
+    url: https://www.fxbaogao.com/
+    access: anti_bot_protected
+    test_level: availability
+    expected_http_statuses: [200, 403, 503]
+    description: "Chinese commerce fashion trend reports emphasizing full look/scene styling; report-based observation."
+
+  - id: nyfw_cfda
+    name: "NYFW / CFDA Schedule"
+    category: documentation
+    url: https://cfda.com/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Official New York Fashion Week calendar as runway event trigger."
+
+  - id: lfw_bfc
+    name: "London Fashion Week / BFC"
+    category: documentation
+    url: https://www.britishfashioncouncil.co.uk/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Official London Fashion Week schedule as runway event trigger."
+
+  - id: pfw_fhcm
+    name: "Paris Fashion Week / FHCM"
+    category: documentation
+    url: https://www.fhcm.paris/en/paris-fashion-week/calendar
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Official Paris Fashion Week calendar as runway event trigger."
+
+  - id: mfw_cameramoda
+    name: "Milano Fashion Week"
+    category: documentation
+    url: https://milanofashionweek.cameramoda.it/en/calendar
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Official Milan Fashion Week calendar as runway event trigger."
