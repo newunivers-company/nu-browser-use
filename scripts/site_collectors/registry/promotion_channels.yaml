@@ -362,9 +362,14 @@ channels:
     consumer_or_b2b: consumer
     collect: true
     notes: >-
-      1.7MB catalog site. Found by appstore_watch discovery — the source
-      research doc listed only My Drama's social/Linktree presence and missed
-      the actual web property entirely.
+      Found by appstore_watch discovery — the source research doc listed only My
+      Drama's social/Linktree presence and missed the web property entirely. It
+      is the richest structured source in the registry: every series page
+      publishes a full schema.org TVSeries node (episodes, seasons, dates,
+      language, genre array, aggregateRating, an interactionStatistic
+      WatchAction counter, trailer, and a cast list). sitemap.xml enumerates the
+      catalog, robots is Allow:/ apart from tracking params. mydrama_collect.py
+      has 191/191 series, 177 with watch counts, 184 distinct actors.
   - url: https://linktr.ee/my_drama_series
     brand: my_drama
     channel_type: linkhub
