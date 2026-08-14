@@ -57,6 +57,7 @@ from newtoki_watch import (
 	MIRRORS,
 	NEAR_THRESHOLD,
 	classify,
+	fragments,
 	normalize,
 	search,
 	similarity,
@@ -130,6 +131,30 @@ async def main() -> None:
 					probes += 1
 					hit = any(r['id'] == seed['id'] for r in results)
 					recall[name]['hit' if hit else 'miss'] += 1
+					# When the whole-title probe misses, does a fragment of the
+					# ORIGINAL title still reach the same series? That is the
+					# question fragment probing exists to answer, so it is
+					# measured rather than asserted.
+					if not hit:
+						rescued = False
+						for piece in fragments(seed['title']):
+							try:
+								frag_results = await search(session, host, piece)
+							except Exception:  # noqa: BLE001
+								continue
+							probes += 1
+							if any(r['id'] == seed['id'] for r in frag_results):
+								rescued = True
+							# Crowded fragment results are the negatives the
+							# threshold analysis was starved of.
+							for other in frag_results:
+								if other['id'] != seed['id']:
+									scores.append({'variant': f'{name}+fragment', 'kind': 'other',
+										'score': round(similarity(normalize(piece), normalize(other['title'])), 3), 'true_match': False})
+							await asyncio.sleep(1.2)
+							if rescued:
+								break
+						recall[f'{name} (+fragments)']['hit' if rescued else 'miss'] += 1
 					found_for_seed.append(name if hit else f'-{name}')
 					if hit:
 						# How does our own classifier score the true row?

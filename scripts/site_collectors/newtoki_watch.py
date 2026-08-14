@@ -28,9 +28,19 @@ DEPTH (why each layer exists)
               Girl" or a partial. Character-bigram Jaccard is used because it
               degrades sensibly on Korean, where whitespace tokenization does
               not.
+  fragments   The site matches titles by substring, so a rename that mangles
+              the middle escapes a whole-title query. Querying head, centre and
+              tail windows of our own title recovers those: any single mid-title
+              edit leaves at least one window intact. Fragment hits only ever
+              land in the near tier — a piece of our title matching some other
+              work is the expected outcome of a crowded fragment query, not a
+              sighting.
   evidence    A bare URL does not support a takedown. On a match the series
-              page is read for episode count, episode numbering, upload dates
-              and the author/status fields — that is what sizes the harm.
+              page is read for episode count, episode numbering, upload dates,
+              the author/status fields, and the URLs and hosts serving the
+              images — that is what sizes the harm and tells a notice where to
+              aim. Asset URLs and counts only: no image bytes are fetched, and
+              no copy of the infringing work is made or stored.
   recurrence  first_seen / last_seen / times_seen per (our title, series id)
               makes re-upload after a takedown visible, which a per-run zero
               never would.
@@ -135,6 +145,14 @@ JS_READ_EVIDENCE = r"""
 		view_markers: views,
 		author_line: (body.match(/작가[^\n]{0,60}/) || [])[0] || null,
 		status_line: (body.match(/연재[^\n]{0,40}/) || [])[0] || null,
+		// Asset URLs, hosts and counts only. A notice cites the URLs that serve
+		// the infringing copies; it does not require, and this never makes, a
+		// copy of them. No image bytes are fetched or stored at any point.
+		cover_url: (document.querySelector('meta[property="og:image"]') || {}).content || null,
+		image_hosts: Array.from(new Set(Array.from(document.querySelectorAll('img[src]'))
+			.map(i => { try { return new URL(i.src, location.href).host; } catch (e) { return null; } })
+			.filter(Boolean))).slice(0, 8),
+		image_asset_count: document.querySelectorAll('img[src]').length,
 	});
 })()
 """
@@ -180,6 +198,43 @@ def classify(our_normalized: str, candidate_title: str) -> tuple[str, float]:
 	return ('near', score) if score >= NEAR_THRESHOLD else ('none', score)
 
 
+# Fragment probing. Site search is substring-based (measured: whitespace
+# removal, 60% prefix and a dropped final character all resolve at 100%, a
+# character deleted mid-title at ~60%). So a rename that mangles the middle
+# escapes a whole-title query but is still caught by a query made of a piece
+# that survived. Fragments are deliberately long — short ones return crowded
+# result sets that cost review time without adding reach.
+FRAGMENT_MIN_CJK = 5
+FRAGMENT_MIN_LATIN = 10
+
+
+def fragments(title: str) -> list[str]:
+	"""Distinctive substrings of a title, longest first.
+
+	Windows are taken over the raw title rather than the normalized form
+	because the query goes to the site, which does its own folding; we only
+	need the piece to be long enough to be distinctive.
+	"""
+	compact = re.sub(r'\s+', ' ', title).strip()
+	if not compact:
+		return []
+	is_cjk = bool(re.search(r'[가-힣]', compact))
+	minimum = FRAGMENT_MIN_CJK if is_cjk else FRAGMENT_MIN_LATIN
+	if len(compact) <= minimum:
+		return []
+	window = max(minimum, int(len(compact) * 0.6))
+	if window >= len(compact):
+		window = len(compact) - 1
+	out: list[str] = []
+	# Head, tail and centre: between them, any single mid-title edit leaves at
+	# least one window intact.
+	for start in (0, len(compact) - window, max(0, (len(compact) - window) // 2)):
+		piece = compact[start : start + window].strip()
+		if len(piece) >= minimum and piece not in out and piece != compact:
+			out.append(piece)
+	return out
+
+
 def parse_watchlist(path: Path) -> list[dict]:
 	"""One work per line; `|`-separated aliases are all searched."""
 	works: list[dict] = []
@@ -189,7 +244,12 @@ def parse_watchlist(path: Path) -> list[dict]:
 			continue
 		names = [part.strip() for part in line.split('|') if part.strip()]
 		if names:
-			works.append({'title': names[0], 'aliases': names[1:], 'queries': names})
+			probes: list[str] = []
+			for name in names:
+				for piece in fragments(name):
+					if piece not in names and piece not in probes:
+						probes.append(piece)
+			works.append({'title': names[0], 'aliases': names[1:], 'queries': names, 'fragments': probes})
 	return works
 
 
@@ -300,7 +360,9 @@ async def main() -> None:
 	parser.add_argument('--watchlist', help='text file, one of OUR titles per line; `|` separates aliases')
 	parser.add_argument('--self-test', action='store_true', help='run the control queries only')
 	parser.add_argument('--headful', action='store_true')
+	parser.add_argument('--no-fragments', action='store_true', help='whole titles only; skip substring probes')
 	args = parser.parse_args()
+	use_fragments = not args.no_fragments
 
 	if not args.watchlist and not args.self_test:
 		raise SystemExit('--watchlist is required (rights-protection mode queries our titles only)')
@@ -310,7 +372,8 @@ async def main() -> None:
 		raise SystemExit('watchlist is empty')
 	if works:
 		alias_count = sum(len(w['aliases']) for w in works)
-		print(f'watchlist: {len(works)} works, {alias_count} aliases (rights-protection mode, our titles only)')
+		fragment_count = sum(len(w['fragments']) for w in works) if use_fragments else 0
+		print(f'watchlist: {len(works)} works, {alias_count} aliases, {fragment_count} fragment probes (rights-protection mode, our titles only)')
 
 	today = dt.date.today().isoformat()
 	now = dt.datetime.now(dt.timezone.utc).isoformat()
@@ -368,7 +431,11 @@ async def main() -> None:
 				exact: list[dict] = []
 				near: list[dict] = []
 				scanned = 0
-				for query in work['queries']:
+				# Whole names first, then fragments. Fragment hits are never promoted
+				# to `exact` on their own — a piece of our title matching some
+				# other work is exactly what a crowded fragment query returns.
+				probe_plan = [(name, False) for name in work['queries']] + [(piece, True) for piece in (work['fragments'] if use_fragments else [])]
+				for query, is_fragment in probe_plan:
 					try:
 						results = await search_all(session, host, query, SECTIONS)
 					except Exception as exc:  # noqa: BLE001
@@ -388,10 +455,11 @@ async def main() -> None:
 								best_kind, best_score = kind, max(best_score, score)
 							if best_kind == 'exact':
 								break
-						if best_kind == 'exact':
-							exact.append({**result, 'score': best_score, 'via_query': query})
-						elif best_kind == 'near':
-							near.append({**result, 'score': round(best_score, 3), 'via_query': query})
+						record = {**result, 'score': round(best_score, 3), 'via_query': query, 'via_fragment': is_fragment}
+						if best_kind == 'exact' and not is_fragment:
+							exact.append({**record, 'score': best_score})
+						elif best_kind in ('exact', 'near'):
+							near.append(record)
 					await asyncio.sleep(2.0)
 
 				for hit in exact + near:
@@ -408,12 +476,20 @@ async def main() -> None:
 						'latest_upload': evidence.get('latest_upload'),
 						'upload_dates': evidence.get('upload_dates'),
 						'author_line': evidence.get('author_line'), 'status_line': evidence.get('status_line'),
+						'cover_url': evidence.get('cover_url'),
+						'image_hosts': evidence.get('image_hosts'),
+						'image_asset_count': evidence.get('image_asset_count'),
 						'first_seen': entry['first_seen'], 'last_seen': entry['last_seen'], 'times_seen': entry['times_seen'],
 						'observed_at': now,
 					})
 					await asyncio.sleep(1.5)
 
-				per_work.append({'title': work['title'], 'aliases': work['aliases'], 'results_scanned': scanned, 'exact': len(exact), 'near': len(near)})
+				per_work.append({
+					'title': work['title'], 'aliases': work['aliases'],
+					'fragments': work['fragments'] if use_fragments else [],
+					'results_scanned': scanned, 'exact': len(exact), 'near': len(near),
+					'near_via_fragment': sum(1 for h in near if h['via_fragment']),
+				})
 				sections_hit = sorted({h['section'] for h in exact + near})
 				where = f' in {",".join(sections_hit)}' if sections_hit else ''
 				print(f'[{index}/{len(works)}] "{work["title"]}" ({len(work["queries"])} queries x {len(SECTIONS)} sections): exact={len(exact)} near={len(near)} scanned={scanned}{where}')
