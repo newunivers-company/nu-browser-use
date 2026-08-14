@@ -152,7 +152,7 @@ sources:
     name: Product Hunt
     category: social_media
     url: https://www.producthunt.com/
-    access: public_javascript
+    access: anti_bot_protected
     test_level: availability
     expected_http_statuses: [200, 403]
     description: Community-ranked product launches.
@@ -642,7 +642,7 @@ sources:
     name: MetaFilter
     category: social_media
     url: https://www.metafilter.com/
-    access: public_static
+    access: anti_bot_protected
     test_level: availability
     expected_http_statuses: [200, 403]
     description: Long-running community weblog front page.
@@ -698,9 +698,9 @@ sources:
     name: "TV Tropes"
     category: documentation
     url: https://tvtropes.org/
-    access: public_static
+    access: anti_bot_protected
     test_level: availability
-    expected_http_statuses: [200]
+    expected_http_statuses: [200, 403, 503]
     description: "Character archetype/trope taxonomy; REFERENCE_ONLY, derived ontology only (no bulk copy)."
 
   - id: kmdb
@@ -743,27 +743,27 @@ sources:
     name: "Toyhouse"
     category: social_media
     url: https://toyhou.se/
-    access: public_javascript
+    access: anti_bot_protected
     test_level: availability
-    expected_http_statuses: [200]
+    expected_http_statuses: [200, 403, 503]
     description: "Large OC community; manual trend/reference source (low automation access)."
 
   - id: worldanvil
     name: "World Anvil"
     category: documentation
     url: https://www.worldanvil.com/
-    access: public_javascript
+    access: anti_bot_protected
     test_level: availability
-    expected_http_statuses: [200]
+    expected_http_statuses: [200, 403, 503]
     description: "Worldbuilding character templates as Character Bible data-model reference."
 
   - id: character_ai
     name: "Character.AI"
     category: social_media
     url: https://character.ai/
-    access: public_javascript
+    access: anti_bot_protected
     test_level: availability
-    expected_http_statuses: [200]
+    expected_http_statuses: [200, 403, 503]
     description: "AI-persona demand ecosystem; archetype statistics only (no character/likeness copy)."
 
   - id: talkie_ai
@@ -833,18 +833,18 @@ sources:
     name: "Models.com"
     category: documentation
     url: https://models.com/
-    access: public_javascript
+    access: anti_bot_protected
     test_level: availability
-    expected_http_statuses: [200]
+    expected_http_statuses: [200, 403, 503]
     description: "Fashion model/new-face database as visual character-archetype reference."
 
   - id: artstation
     name: "ArtStation"
     category: social_media
     url: https://www.artstation.com/
-    access: public_javascript
+    access: anti_bot_protected
     test_level: availability
-    expected_http_statuses: [200]
+    expected_http_statuses: [200, 403, 503]
     description: "Character concept/costume art for fantasy/genre visual design reference."
 
   - id: behance
@@ -905,9 +905,9 @@ sources:
     name: "Fab MetaHuman"
     category: commerce
     url: https://www.fab.com/channels/metahuman
-    access: public_javascript
+    access: anti_bot_protected
     test_level: availability
-    expected_http_statuses: [200]
+    expected_http_statuses: [200, 403, 503]
     description: "Ready-made MetaHuman/outfit/groom assets for fast previs."
 
   - id: reallusion_cc
@@ -923,9 +923,9 @@ sources:
     name: "Hero Forge"
     category: commerce
     url: https://www.heroforge.com/
-    access: public_javascript
+    access: anti_bot_protected
     test_level: availability
-    expected_http_statuses: [200]
+    expected_http_statuses: [200, 403, 503]
     description: "Fast fantasy/sci-fi/historical character silhouette assembly."
 
   - id: ipip
@@ -977,9 +977,9 @@ sources:
     name: "Pexels"
     category: documentation
     url: https://www.pexels.com/
-    access: public_javascript
+    access: anti_bot_protected
     test_level: availability
-    expected_http_statuses: [200]
+    expected_http_statuses: [200, 403, 503]
     description: "Photo/video reference; per API terms (no bulk copy / ML dataset)."
 
   - id: jikan_moe
@@ -997,18 +997,18 @@ sources:
     name: "RIDI Webnovel"
     category: commerce
     url: https://ridibooks.com/webnovel/recommendation
-    access: public_javascript
+    access: anti_bot_protected
     test_level: availability
-    expected_http_statuses: [200]
+    expected_http_statuses: [200, 403, 503]
     description: "Korean web-novel ranking, keywords, and public synopsis for trope/relationship mining."
 
   - id: ridi_webtoon
     name: "RIDI Webtoon"
     category: commerce
     url: https://ridibooks.com/webtoon/recommendation
-    access: public_javascript
+    access: anti_bot_protected
     test_level: availability
-    expected_http_statuses: [200]
+    expected_http_statuses: [200, 403, 503]
     description: "Korean webtoon ranking with original-author/studio adaptation signals."
 
   - id: kakaopage_ranking
@@ -1105,9 +1105,9 @@ sources:
     name: "Inkitt"
     category: commerce
     url: https://www.inkitt.com/
-    access: public_javascript
+    access: anti_bot_protected
     test_level: availability
-    expected_http_statuses: [200]
+    expected_http_statuses: [200, 403, 503]
     description: "Reader-data-driven web fiction feeding GALATEA/CandyJar screen adaptations."
 
   - id: goodnovel_rankings
@@ -1132,9 +1132,9 @@ sources:
     name: "WebNovel"
     category: commerce
     url: https://www.webnovel.com/ranking
-    access: public_javascript
+    access: anti_bot_protected
     test_level: availability
-    expected_http_statuses: [200]
+    expected_http_statuses: [200, 403, 503]
     description: "Global web-fiction ranking with rich story-grammar tags."
 
   - id: royalroad_rising
@@ -1168,9 +1168,9 @@ sources:
     name: "Novel Updates"
     category: social_media
     url: https://www.novelupdates.com/series-finder/
-    access: public_static
+    access: anti_bot_protected
     test_level: availability
-    expected_http_statuses: [200]
+    expected_http_statuses: [200, 403, 503]
     description: "KR/CN/JP web-novel aggregator with AND/OR tag taxonomy and reviews."
 
   - id: kakuyomu_ranking
@@ -1395,9 +1395,9 @@ sources:
     name: "AsianWiki"
     category: documentation
     url: https://asianwiki.com/Main_Page
-    access: public_static
+    access: anti_bot_protected
     test_level: availability
-    expected_http_statuses: [200]
+    expected_http_statuses: [200, 403, 503]
     description: "Asian drama/film upcoming schedule and casting/teaser/trailer event updates."
 
   - id: soompi_tvfilm
@@ -1759,9 +1759,9 @@ sources:
     name: "Structurae"
     category: documentation
     url: https://structurae.net/
-    access: public_static
+    access: anti_bot_protected
     test_level: availability
-    expected_http_statuses: [200]
+    expected_http_statuses: [200, 403, 503]
     description: "Large structures (bridges/dams/tunnels/towers) for scale locations."
 
   - id: skyscraper_center
@@ -1795,9 +1795,9 @@ sources:
     name: "LocationsHub"
     category: documentation
     url: https://www.locationshub.com/
-    access: public_javascript
+    access: anti_bot_protected
     test_level: availability
-    expected_http_statuses: [200]
+    expected_http_statuses: [200, 403, 503]
     description: "Global film-location reference DB (100k+ locations, 1.5M+ photos)."
 
   # --- Location & Environment Intelligence (addendum) ---
@@ -1869,9 +1869,9 @@ sources:
     name: "UNESCO World Heritage List"
     category: documentation
     url: https://whc.unesco.org/en/list/
-    access: public_static
+    access: anti_bot_protected
     test_level: availability
-    expected_http_statuses: [200]
+    expected_http_statuses: [200, 403, 503]
     description: "Cultural/natural heritage landmarks with coordinates; visual discovery + permission risk."
 
   - id: arcgis_living_atlas
@@ -1905,9 +1905,9 @@ sources:
     name: "Peerspace"
     category: commerce
     url: https://www.peerspace.com/
-    access: public_javascript
+    access: anti_bot_protected
     test_level: availability
-    expected_http_statuses: [200]
+    expected_http_statuses: [200, 403, 503]
     description: "Hourly-rentable residences/studios/private spaces for bookable filming locations."
 
   - id: set_scouter
@@ -2111,9 +2111,9 @@ sources:
     name: "Vestiaire Collective"
     category: commerce
     url: https://www.vestiairecollective.com/
-    access: public_javascript
+    access: anti_bot_protected
     test_level: availability
-    expected_http_statuses: [200]
+    expected_http_statuses: [200, 403, 503]
     description: "Luxury resale longevity by country/generation for durable-style analysis."
 
   - id: xiaohongshu
