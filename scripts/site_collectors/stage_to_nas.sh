@@ -46,10 +46,22 @@ HOME_ROOT="$HOME"
 DRY_RUN="${DRY_RUN:-0}"
 only=("$@")
 
-# Every *_export, plus collector output dirs that do not carry the suffix.
+# Every *_export, plus the collector output dirs that do not carry the suffix.
+# tests/ci/test_staging_coverage.py keeps this in step with what the collectors
+# actually declare — the previous hand-maintained version silently dropped
+# twelve directories before anyone noticed.
+#
+# newtoki_market is deliberately absent. It holds a parallel session's
+# enumeration of a piracy site's listings, which contradicts the "no listing
+# enumeration, no index building" guardrail in newtoki_watch.py. Staging it
+# would push that inventory onto shared storage, so it stays local until a
+# human settles the conflict.
 mapfile -t candidates < <(
 	find "$HOME_ROOT" -maxdepth 1 -mindepth 1 -type d \
-		\( -name '*_export' -o -name 'source_loop' -o -name 'source_harvest' -o -name 'newtoki_watch' \) \
+		\( -name '*_export' \
+		   -o -name 'source_loop' -o -name 'source_harvest' -o -name 'source_review' \
+		   -o -name 'newtoki_watch' -o -name 'catalog_posters' \
+		   -o -name 'trope_rank' -o -name 'collect_cycle' \) \
 		-printf '%f\n' 2>/dev/null | sort
 )
 
