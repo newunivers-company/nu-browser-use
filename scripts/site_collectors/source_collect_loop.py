@@ -57,9 +57,9 @@ HEADERS = {
 	'Accept-Language': 'en-US,en;q=0.9,ko;q=0.8',
 }
 DELAY = 1.0
-ITEM_CAP = 2000
+ITEM_CAP = 20000
 SNIPPET = 200
-SITEMAP_CHILDREN = 12  # bounded: a whole sitemap tree is a crawl, not a read
+SITEMAP_CHILDREN = 40  # bounded: a whole sitemap tree is a crawl, not a read
 FEEDS_PER_SOURCE = 6
 # Framework state blobs can embed article bodies, so any string longer than this
 # is dropped outright rather than snipped — a body has no business in a catalog.
@@ -76,6 +76,26 @@ NUXT_RE = re.compile(r'<script[^>]*id="__NUXT_DATA__"[^>]*>(.*?)</script>', re.S
 TITLE_KEYS = ('title', 'name', 'headline', 'bookName', 'seriesName', 'displayName')
 URL_KEYS = ('url', 'link', 'href', 'permalink', 'slug', 'canonicalUrl')
 NS = {'atom': 'http://www.w3.org/2005/Atom', 'sm': 'http://www.sitemaps.org/schemas/sitemap/0.9'}
+SITEMAP_DIRECTIVE_RE = re.compile(r'(?im)^\s*sitemap:\s*(\S+)')
+
+
+async def declared_sitemaps(session: aiohttp.ClientSession, base: str) -> list[str]:
+	"""Sitemaps the site points at from robots.txt.
+
+	Guessing /sitemap.xml and giving up on a 404 was leaving inventories on the
+	table: 14 otherwise channel-less sources publish a `Sitemap:` directive
+	naming a path we never tried. Reading the pointer the site published is
+	both more complete and more respectful than probing for one.
+	"""
+	parts = urlsplit(base)
+	try:
+		async with session.get(f'{parts.scheme}://{parts.netloc}/robots.txt', timeout=aiohttp.ClientTimeout(total=20)) as response:
+			if response.status != 200:
+				return []
+			body = await response.text(errors='replace')
+	except Exception:  # noqa: BLE001
+		return []
+	return list(dict.fromkeys(SITEMAP_DIRECTIVE_RE.findall(body)))[:4]
 
 
 def snippet(value: object) -> str | None:
@@ -288,7 +308,8 @@ async def collect_source(session: aiohttp.ClientSession, source: dict, state: di
 		targets = source.get('feeds', [])[:FEEDS_PER_SOURCE]
 	elif channel == 'sitemap':
 		parts = urlsplit(base)
-		targets = [f'{parts.scheme}://{parts.netloc}/sitemap.xml']
+		declared = await declared_sitemaps(session, base)
+		targets = declared or [f'{parts.scheme}://{parts.netloc}/sitemap.xml']
 	else:
 		targets = [base]
 
@@ -352,6 +373,7 @@ async def main() -> None:
 	parser.add_argument('--limit', type=int, help='sources per pass (the loop resumes where it stopped)')
 	parser.add_argument('--only-channel', choices=sorted(COLLECTABLE))
 	parser.add_argument('--reset', action='store_true', help='forget checkpoints and start the walk over')
+	parser.add_argument('--no-promote', action='store_true', help='skip the robots Sitemap: promotion pass')
 	args = parser.parse_args()
 
 	dossiers_path = HARVEST_DIR / 'dossiers.json'
@@ -362,6 +384,23 @@ async def main() -> None:
 
 	# Catalog order is preserved; only robots-clean sources with a real channel.
 	queue = [d for d in dossiers if d.get('channel') in COLLECTABLE and d.get('robots') in PERMITTED_ROBOTS]
+	# Sources with no channel today may still publish a Sitemap: directive; the
+	# harvest only probed /sitemap.xml. Promote the ones that name a real map.
+	channel_less = [d for d in dossiers if d.get('robots') in PERMITTED_ROBOTS and d.get('channel') in ('opengraph_only', 'html_only')]
+	promoted: list[dict] = []
+	if channel_less and not args.no_promote:
+		async with aiohttp.ClientSession(headers=HEADERS) as session:
+			semaphore = asyncio.Semaphore(6)
+
+			async def check(source: dict) -> dict | None:
+				async with semaphore:
+					maps = await declared_sitemaps(session, source['url'])
+				return {**source, 'channel': 'sitemap'} if maps else None
+
+			promoted = [r for r in await asyncio.gather(*(check(d) for d in channel_less)) if r]
+		known = {d['id'] for d in queue}
+		queue = queue + [p for p in promoted if p['id'] not in known]
+		print(f'promoted {len(promoted)} channel-less sources that declare a Sitemap: in robots')
 	if args.only_channel:
 		queue = [d for d in queue if d['channel'] == args.only_channel]
 	skipped_named = [d['id'] for d in dossiers if d.get('robots') == 'named_ai_block']
