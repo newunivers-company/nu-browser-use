@@ -26,6 +26,18 @@
 - **AI봇 명시 차단 소스 직접 스크래핑** — PromptHero, SimplyScripts, TV Tropes 등 ToS 리스크 명시 소스.
 - **authwall 뒤 소셜 채널** — LinkedIn/TikTok/Instagram/Facebook/Linktree. robots가 자동화를 문장으로 금지하거나(LinkedIn·Facebook), `User-agent: *`에 `Disallow: /`이거나(Linktree), AI 크롤러를 지목 차단한다(TikTok). 채널의 **존재와 소유관계는 레지스트리에 기록하되 요청하지 않는다** — `promotion_channels.yaml`의 `access_tier: T2` + `collect: false`.
 - **봇 방어 우회** — WAF 챌린지(예: col.com Alibaba Tengine 405), 레이트리밋 회피, UA 위장. 정상 브라우저 헤더(Accept 등) 전송은 우회가 아니라 정직한 클라이언트 동작이며, User-Agent는 계속 우리를 밝힌다.
+- **암호화된 응답 봉투 해제** — 사이트가 SSR 페이로드를 대칭 암호화해 가린 경우(예: ShortMax `__NUXT_DATA__`), JS 번들에서 키를 복구해 푸는 것은 접근통제 우회다. **ReelShort 예외는 그 사이트의 익명 카탈로그 읽기로 한정된 것이지 일반 면허가 아니다.** 대체 경로: 브라우저는 정상 동작으로 이걸 복호화하므로 **렌더된 화면을 읽는다** — 방문자가 보는 것과 동일하고 봉투는 건드리지 않는다.
+
+## 판단 기준: 라이브러리 vs 브라우저
+
+robots.txt가 `User-agent: *` 그룹 없이 **스크래핑 라이브러리를 이름으로 차단**하는 경우
+(예: flextv.cc가 `python-requests`/`Scrapy`/`wget`/`HTTrack`/`crawler4j`/`libwww-perl`을
+열거하고 검색엔진만 화이트리스트), 형식적으로 우리를 구속하는 규칙은 없다(stdlib
+`can_fetch('*')`는 True). 그러나 그 열거는 어떤 접근이 환영받지 못하는지 분명히 말한다.
+
+이 경우 긋는 선은 **허용/금지가 아니라 라이브러리/브라우저**다. HTTP 경로가 더 쉽더라도
+쓰지 않고, 실제 브라우저로 일반 방문자처럼 방문한다. 서버 동작도 같은 신호를 준다 —
+flextv.cc는 기본 aiohttp 요청에 `400 Too many headers received`, 브라우저에는 정상 응답.
 
 ## 영상 데이터가 필요할 때의 합법 경로
 
@@ -43,7 +55,10 @@
 | DramaBox | ⬜ 미탐색 | 진입점 확인 필요 (sitemap 404) |
 | netshort | ⬜ 진입점 404 | 재탐색 필요 |
 | App Store Lookup | ✅ 수집 완료 | Apple 공식 무키 JSON — 앱 14개 × 3개 스토어프론트 |
-| 홍보채널 레지스트리 | ✅ 검증 완료 | 채널 65개 tier 분류, T0 20개만 수집 |
+| 홍보채널 레지스트리 | ✅ 검증 완료 | 채널 71개 tier 분류 + pydantic 불변식 강제 |
+| GoodShort | ✅ 461편 수집 | 순수 HTTP: SSR `__INITIAL_STATE__` (정찰로 T1→T0 재분류) |
+| ShortMax | ✅ 76편 수집 | 렌더 DOM (SSR 페이로드 암호화 — 봉투 미해제) |
+| FlexTV | ✅ 수집 | 렌더 DOM (robots가 스크래핑 라이브러리 지목 차단) |
 | dramawave.tech | ⚠️ 정정 | 이전 "DNS 실패" 기재는 오류 — 200이나 2.8KB 셸 |
 | MicroDrama Radar | ❌ 차단 | Vercel 429 |
 

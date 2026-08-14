@@ -188,6 +188,62 @@ dramashorts/reelshort)에서 stdlib와 교차검증했고 **6건 전부 판정 �
 검증된 stdlib로 넘기고, 직접 짠 그룹 워커는 stdlib가 못 하는 일(어떤 AI UA가 지목됐는지
 열거)만 담당하도록 축소했다.
 
+### 소스별 정찰 (promo_recon.py, 2026-08-14)
+
+`promo_browser_collect`가 "페이지가 무엇을 그리는가"를 답한다면, `promo_recon`은
+**수집 방식을 결정하는 질문** — "페이지가 데이터를 얻으려 무엇을 호출하는가" — 를 답한다.
+`BrowserProfile.record_har_path`(내장 HarRecordingWatchdog)를 쓰므로 CDP Network를
+손으로 붙일 필요가 없다. 페이로드는 shape만 남기고 내용은 보관하지 않는다.
+
+세 소스를 하나씩 확인한 결과, **세 소스가 세 가지 다른 결론**으로 갈렸다.
+
+| 소스 | HAR | 페이로드 | 판정 | 수집 |
+|---|---|---|---|---|
+| **GoodShort** | 73req, 카탈로그 JSON **0** | `__INITIAL_STATE__` **평문** | SSR — 브라우저 불필요 | **T1→T0**, HTTP |
+| **ShortMax** | 154req, 카탈로그 JSON 0 | `__NUXT_DATA__` **암호화** | 봉투 해제 금지 | T1, 렌더 DOM |
+| **FlexTV** | 277req, 카탈로그 JSON 0 | `__NUXT_DATA__` 평문 | robots 의도상 라이브러리 거부 | T1, 렌더 DOM |
+
+**GoodShort — SPA처럼 보였지만 SSR.** `acf`는 포스터 CDN, `acfs3`는 JS 번들,
+`api.xintaicz.cn/sa.gif`는 Sensors Analytics 텔레메트리였다. 카탈로그는 전부 HTML 안에
+있어서 브라우저가 아예 필요 없다. **JS 셸이라고 JS 콜렉터가 필요한 건 아니라는 것**,
+이게 소스별 정찰을 하는 이유다.
+
+**ShortMax — 페이로드 자체가 암호화.** `__NUXT_DATA__`의 모든 값이 `9MePJ5iXm/LfrSEc7YAS7`
+접두사를 공유하는 base64 블록, 즉 고정 IV 대칭 봉투다. JS 번들에서 키를 복구해 푸는 것은
+사이트가 의도적으로 가린 데이터에 대한 접근통제 우회이고, 수집정책이 금지한다 —
+ReelShort 예외는 그 사이트의 익명 카탈로그 읽기로 **명시적으로 한정**된 것이지 일반 면허가 아니다.
+브라우저는 정상 동작 과정에서 이걸 복호화하므로, **렌더된 화면을 읽는다**. 방문자가 보는
+것과 정확히 같고 봉투는 건드리지 않는다. 콜렉터가 무거워진 건 그 선을 지키는 비용이다.
+
+**FlexTV — 평문인데도 브라우저로 간다.** robots.txt에 `User-agent: *` 그룹이 **아예 없고**,
+Googlebot/Bingbot/Yandex/Yeti를 화이트리스트로 허용한 뒤 `python-requests`, `Scrapy`,
+`wget`, `HTTrack`, `crawler4j`, `libwww-perl`을 **이름으로** 차단한다. 형식적으로 우리를
+구속하는 규칙은 없고 stdlib `can_fetch('*')`도 True다. 하지만 그 열거는 어떤 접근이
+환영받지 못하는지 분명히 말하고, 서버도 같은 말을 한다 — 기본 aiohttp 요청에는
+`400 Too many headers received`, 브라우저에는 정상 응답. 그래서 여기서 그은 선은
+**허용/금지가 아니라 라이브러리/브라우저**다. HTTP 경로가 훨씬 쉬운데도 쓰지 않는다.
+
+### 수집 결과
+
+| 소스 | 작품 | 확보 지표 |
+|---|---|---|
+| GoodShort | **461** | viewCount, likeCount, followCount, commentCount, inLibraryNum, ratings, chapterCount + 장르/트로프 461/461 |
+| ShortMax | **76** | plays, likes, 화수, 카테고리, 시놉시스 + 추천 엣지 **1,125** |
+| FlexTV | 진행 | views, likes, 장르(발견 경로 기준) |
+
+**GoodShort의 트로프 어휘**가 특히 값지다 — Counterattack 112, CEO 109, Sweet 106,
+Underdog Rise 84, Strong Female Lead 81… 461/461 커버리지에 **viewCount가 붙어 있어서**
+랭킹 계획의 Trope Rank를 단순 빈도가 아니라 **조회수 가중**으로 계산할 수 있다.
+
+**ShortMax의 추천 엣지 1,125개**는 플랫폼이 직접 저작한 유사도 그래프다. 경쟁사가 무엇을
+무엇의 대체재로 보는지에 대한 1차 진술이라 그 자체로 보관 가치가 있다.
+
+수치 정밀도는 소스의 것이다. ShortMax/FlexTV는 UI가 "447K"로 축약해 노출하므로
+`parse_count`가 확장하되 `*_is_approx`로 **정밀도가 우리 것이 아님을 기록**한다.
+
+정확도 버그 1건 정정: ShortMax 화수를 `a.episode` 앵커 수로 셌는데 목록이 24개씩
+페이징돼 24로 고정 출력됐다. "N Episodes" 라벨을 읽도록 고쳐 실제값(예: 52)을 얻는다.
+
 ### `promo_browser_collect.py` — T1 하네스
 
 계획서의 "D+4 CDP 4개"를 사이트별 스크립트 대신 **레지스트리 구동 단일 하네스**로 대체했다.

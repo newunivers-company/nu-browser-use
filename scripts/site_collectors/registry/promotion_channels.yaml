@@ -483,12 +483,20 @@ channels:
     brand: shortmax
     channel_type: website
     access_tier: T1
-    robots_verdict: unknown
+    robots_verdict: allow
     official_status: verified
     official_evidence: redirect_target
     consumer_or_b2b: consumer
     collect: true
-    notes: shortmax.app redirects here — rebrand detected 2026-08-14
+    notes: >-
+      shortmax.app redirects here — rebrand detected 2026-08-14. promo_recon:
+      Nuxt SSR, no catalog API (154-request HAR held only i18n, build manifest,
+      ipify and telemetry). The __NUXT_DATA__ payload is ENCRYPTED — every value
+      is a base64 block sharing the prefix 9MePJ5iXm/LfrSEc7YAS7, a fixed-IV
+      symmetric envelope. We do not break it; shortmax_collect.py reads the
+      rendered page instead, which the browser decrypts as any visitor's would.
+      Stays T1 for that reason. robots allows all but /search/. 76 titles with
+      plays/likes plus 1,125 "You Might Like" recommendation edges.
   - url: https://shortmax.tech/
     company: shorttv
     channel_type: corporate
@@ -626,7 +634,17 @@ channels:
     official_evidence: appstore_seller_url
     consumer_or_b2b: consumer
     collect: true
-    notes: 828KB page, sitemap 404 -> CDP
+    notes: >-
+      Nuxt SSR, no catalog API, sitemap 404. Payload is PLAINTEXT, so an HTTP
+      collector would be trivial — we deliberately do not write one. robots.txt
+      has no `User-agent: *` group at all: it allowlists Googlebot / Bingbot /
+      Yandex / Yeti and denies python-requests / Scrapy / wget / HTTrack /
+      crawler4j / libwww-perl by name. No rule formally binds us (stdlib
+      can_fetch('*') is True) but the intent is unmistakable, and the server
+      agrees — default aiohttp gets `400 Too many headers received` while a
+      browser is served. Line drawn is library-vs-browser, so flextv_collect.py
+      renders. COVERAGE GAP: /dramas/all-dramas has anchor-less JS cards, so
+      enumeration is home + genre pages only.
   # Footer links off flextv.cc, read by promo_browser_collect.
   - url: https://www.instagram.com/flextv_official_us
     brand: flextv
