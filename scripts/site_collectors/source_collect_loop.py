@@ -9,7 +9,8 @@ Per-source channel handling:
   feed              RSS/Atom entries -> title, link, dates, author, categories
   sitemap           URL inventory    -> loc, lastmod, changefreq, priority
   json_ld           typed entities   -> name, url, dates, numeric properties
-  framework_state   __NEXT_DATA__ / __NUXT_DATA__ mined for item-shaped nodes
+  framework_state   NOT collected generically — see COLLECTABLE for the
+                    measurements that settled it; needs a per-site collector
 
 METADATA ONLY — WHAT IS DROPPED AND WHY
 Feeds routinely carry the whole article in `content:encoded` or `<content>`,
@@ -65,7 +66,15 @@ FEEDS_PER_SOURCE = 6
 # Framework state blobs can embed article bodies, so any string longer than this
 # is dropped outright rather than snipped — a body has no business in a catalog.
 STATE_STRING_MAX = 200
-COLLECTABLE = {'feed', 'sitemap', 'json_ld', 'framework_state'}
+# framework_state is NOT collectable generically. Measured twice: raising the
+# miner's reach lifted counts but not value — kakuyomu returned 556 feature
+# flags (payment-maintenance, recaptcha, image-optimizer), tapas 87 navigation
+# labels, therealreal 14 footer links. Only DramaBox yielded real titles, and a
+# dedicated collector already does that far better. A generic miner cannot tell
+# a work from a menu entry or a config key, so counting its output as
+# collection inflates totals with noise. The harvest's original verdict stands:
+# these sources need bespoke collectors. mine_state() is kept for those to use.
+COLLECTABLE = {'feed', 'sitemap', 'json_ld'}
 # robots.txt absent means no rule was published, which under RFC 9309 is not a
 # restriction. Treating that as a block excluded sources nobody asked us to skip.
 PERMITTED_ROBOTS = {'allow', 'unknown'}
@@ -80,6 +89,11 @@ URL_KEYS = ('url', 'link', 'href', 'permalink', 'canonicalUrl')
 # DramaBox ships bookId/bookName/viewCount with no url anywhere in the node.
 # Requiring a URL threw those away, so an id is accepted as identity instead.
 ID_KEYS = ('id', 'bookId', 'seriesId', 'contentId', 'workId', 'slug', 'uuid', 'code')
+# React Query and Redux wrappers bury the payload: on tapas the navigation menu
+# sits at depth 8 and the actual series data at depth 10, under
+# dehydratedState/queries[]/state/data/data/reference/seriesCardView. A depth-8
+# cutoff therefore collected menus and missed the works — measured, not guessed.
+MINE_DEPTH = 14
 NS = {'atom': 'http://www.w3.org/2005/Atom', 'sm': 'http://www.sitemaps.org/schemas/sitemap/0.9'}
 SITEMAP_DIRECTIVE_RE = re.compile(r'(?im)^\s*sitemap:\s*(\S+)')
 
@@ -248,7 +262,7 @@ def mine_state(blob: object, base: str, out: list[dict], depth: int = 0) -> None
 	sites embed whole articles in these blobs, and a catalog has no use for
 	them.
 	"""
-	if depth > 8 or len(out) >= ITEM_CAP:
+	if depth > MINE_DEPTH or len(out) >= ITEM_CAP:
 		return
 	if isinstance(blob, list):
 		for node in blob[:200]:
