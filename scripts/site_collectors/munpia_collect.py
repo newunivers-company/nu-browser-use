@@ -34,6 +34,24 @@ OUT_DIR = Path(os.environ.get('MUNPIA_OUT', str(Path.home() / 'munpia_export')))
 BASE = 'https://www.munpia.com'
 UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36'
 DETAIL_SLEEP = 0.7
+GENRE_SLEEP = 1.0
+
+# Genre code map from the pc-novel JS bundle (Ij constant)
+GENRES = {
+	'ALL': '전체 장르',
+	'NEWFANTASY': '현대판타지',
+	'FANTASY': '판타지',
+	'HEROISM': '무협',
+	'HISTORY': '대체역사',
+	'SPORTS': '스포츠',
+	'FUSION': '퓨전',
+	'DRAMA': '드라마',
+	'MILIWAR': '전쟁·밀리터리',
+	'ROMANCE': '로맨스',
+	'GAME': '게임',
+	'SCIENCE': 'SF',
+	'ETC': '기타',
+}
 
 
 def extract_rank_rows(layout_result: dict) -> list[dict]:
@@ -77,6 +95,41 @@ async def main() -> None:
 			layouts = await resp.json()
 		(snap_dir / f'{stamp}.json').write_text(json.dumps(layouts, ensure_ascii=False), encoding='utf-8')
 		rows = extract_rank_rows(layouts.get('result') or {})
+
+		# --- genre-best rails: top-25 per genre (codes from the JS bundle) ------
+		genre_rows: list[dict] = []
+		genre_snap: dict[str, list] = {}
+		for code, label in GENRES.items():
+			if code == 'ALL':
+				continue
+			params = {'genre': code, 'adultMode': 'false', 'platinum': 'false'}
+			try:
+				async with session.get(
+					f'{BASE}/api/v1/main/novel-detail/genre-best',
+					params=params,
+					timeout=aiohttp.ClientTimeout(total=20),
+				) as resp:
+					doc = await resp.json()
+				novels = (doc.get('result') or {}).get('novels') or []
+				genre_snap[code] = novels
+				for n in novels:
+					genre_rows.append(
+						{
+							'rail': f'genre_best:{label}',
+							'novel_id': n.get('novelId'),
+							'title': (n.get('title') or '')[:200],
+							'author': (n.get('author') or '')[:80],
+							'rank': n.get('rank'),
+							'sub_genre': n.get('subGenre'),
+						}
+					)
+				print(f'  genre {label}: {len(novels)} novels')
+			except Exception:  # noqa: BLE001 - a failed genre is skipped
+				print(f'  genre {label}: failed')
+			await asyncio.sleep(GENRE_SLEEP)
+		(snap_dir / f'{stamp}_genre_best.json').write_text(json.dumps(genre_snap, ensure_ascii=False), encoding='utf-8')
+		rows.extend(genre_rows)
+
 		# dedupe per rail+id, keep first
 		seen: set[tuple[str, int]] = set()
 		deduped: list[dict] = []
@@ -127,7 +180,7 @@ async def main() -> None:
 			print(f'details fetched: {len(details)}/{len(ids)}')
 
 	(OUT_DIR / 'rankings.json').write_text(json.dumps(rows, ensure_ascii=False, indent=1), encoding='utf-8')
-	fieldnames = ['rail', 'novel_id', 'title', 'author', 'author_name', 'genres', 'view_count', 'preference_count', 'like_count', 'chapter_count', 'finish', 'pause', 'free', 'paid_serial', 'exclusive', 'adult', 'introduction', 'created_at', 'updated_at']
+	fieldnames = ['rail', 'rank', 'novel_id', 'title', 'author', 'author_name', 'genres', 'sub_genre', 'view_count', 'preference_count', 'like_count', 'chapter_count', 'finish', 'pause', 'free', 'paid_serial', 'exclusive', 'adult', 'introduction', 'created_at', 'updated_at']
 	with (OUT_DIR / 'rankings.csv').open('w', newline='', encoding='utf-8') as fh:
 		writer = csv.DictWriter(fh, fieldnames=fieldnames, extrasaction='ignore')
 		writer.writeheader()
