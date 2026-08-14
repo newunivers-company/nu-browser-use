@@ -8,11 +8,17 @@ was anything that runs them again tomorrow.
 
 Two cadences, chosen by how fast the underlying thing changes:
 
-  daily   catalogue metrics and app-store signals, where a day-over-day delta is
-          the point (view counts, ratings, release cadence, channel size)
-  weekly  structure and inventory, where daily churn would be noise (registry
-          liveness, corporate-site diffs, the catalog-wide source loop, and the
-          cross-source join that depends on the collectors above)
+  daily   things that move day to day and whose delta is the point — catalogue
+          view counts, app-store ratings and release cadence, channel size, and
+          social trend surfaces (Mastodon, Lemmy, Bluesky)
+  weekly  structure, inventory and ranking tables published weekly, where daily
+          churn would be noise — registry liveness, corporate-site diffs, the
+          weekly ranking sources, the catalog-wide source loop, and the join and
+          trope analysis that read whatever the collectors produced
+
+Anything not in either list is excluded on purpose; see UNSCHEDULED_BY_DESIGN
+for which and why. A collector missing from a cadence should be a decision, not
+something nobody noticed.
 
 Each step is a separate process, so one failure cannot take the cycle down; the
 exit code, duration and output tail are recorded per step. Staging to the NAS
@@ -49,23 +55,70 @@ PYTHON = sys.executable
 DAILY: list[tuple[str, list[str], int]] = [
 	('appstore', [str(HERE / 'appstore_watch.py')], 10),
 	('telegram', [str(HERE / 'telegram_card.py')], 5),
+	('mastodon', [str(HERE / 'mastodon_trends.py')], 15),
+	('lemmy', [str(HERE / 'lemmy_communities.py')], 20),
+	('bluesky', [str(HERE / 'bsky_trend_collect.py')], 15),
 	('goodshort', [str(HERE / 'goodshort_collect.py'), '--pages', '220'], 45),
 	('dramaboxdb', [str(HERE / 'dramaboxdb_collect.py'), '--expand', '3', '--max-titles', '2500'], 45),
 	('mydrama', [str(HERE / 'mydrama_collect.py')], 20),
 	('reelshort', [str(HERE / 'reelshort_collect.py'), '--no-posters'], 30),
+	('netshort', [str(HERE / 'netshort_collect.py')], 20),
+	# Rail ordinals, not the catalogue: DramaBox's homepage ordering is itself a
+	# PLATFORM_INTERNAL ranking and changes daily.
+	('dramabox_rails', [str(HERE / 'dramabox_ranking.py')], 15),
 ]
 
 WEEKLY: list[tuple[str, list[str], int]] = [
 	('registry_verify', [str(HERE / 'promo_registry_verify.py')], 15),
 	('corpsites', [str(HERE / 'corpsite_watch.py')], 15),
+	('verticaldrama', [str(HERE / 'verticaldrama_collect.py')], 15),
+	('duanju007', [str(HERE / 'duanju007_collect.py')], 15),
+	('vigloo_snapshot', [str(HERE / 'vigloo_snapshot.py')], 30),
+	('gdelt', [str(HERE / 'gdelt_collect.py')], 20),
+	('prompt_repos', [str(HERE / 'prompt_repo_collect.py')], 20),
 	('source_harvest', [str(HERE / 'source_harvest.py')], 40),
-	('source_loop', [str(HERE / 'source_collect_loop.py')], 120),
-	('title_join', [str(HERE / 'title_join.py')], 10),
+	('source_loop', [str(HERE / 'source_collect_loop.py')], 180),
 	# Browser-driven, so slowest and last: a hung page must not delay the rest.
 	('shortmax', [str(HERE / 'shortmax_collect.py')], 60),
 	('flextv', [str(HERE / 'flextv_collect.py'), '--genres', '6'], 60),
+	# Analysis runs after the catalogues it reads, never before.
+	('title_join', [str(HERE / 'title_join.py')], 10),
+	('trope_rank', [str(HERE / 'trope_rank.py')], 10),
 ]
 
+# Deliberately NOT scheduled, so an omission reads as a decision rather than an
+# oversight:
+#   one-shot corpora        gutenberg_catalog, loc, wikidata_graph, videofeedback
+#                           — static datasets; re-running them yields the same rows
+#   operator-session bound  pin_collect, shotdeck_* — need a signed-in browser
+#                           and should not run unattended
+#   superseded              dramabox_collect (dramaboxdb_collect covers DramaBox
+#                           with view counts), vigloo_collect (vigloo_snapshot is
+#                           the recurring half)
+#   blocked on input        newtoki_watch — needs the rights-holder watchlist;
+#                           add it here the day that lands
+#   recon, not collection   promo_recon, newtoki_calibrate, login_source_probe,
+#                           promo_browser_collect — run by hand when a source's
+#                           shape is in question
+#   one-shot asset pulls    vigloo_assets, vigloo_episode_thumbs — posters and
+#                           episode stills are fetched once and cached; re-running
+#                           re-downloads images for no new signal
+#   unresolved policy       newtoki_market_intel, newtoki_work_meta — written by
+#                           a parallel session and untracked. They enumerate a
+#                           piracy site's listings, which contradicts the
+#                           "no listing enumeration" guardrail in
+#                           newtoki_watch.py. Not scheduled until that conflict
+#                           is settled by a human.
+UNSCHEDULED_BY_DESIGN = {
+	'gutenberg_catalog_collect.py', 'loc_collect.py', 'wikidata_graph_collect.py',
+	'videofeedback_collect.py', 'pin_collect.py', 'shotdeck_collect.py',
+	'shotdeck_render_collect.py', 'dramabox_collect.py', 'vigloo_collect.py',
+	'newtoki_watch.py', 'promo_recon.py', 'newtoki_calibrate.py',
+	'login_source_probe.py', 'promo_browser_collect.py', 'munpia_collect.py',
+	'comfy_workflow_collect.py', 'fal_collect.py',
+	'vigloo_assets.py', 'vigloo_episode_thumbs.py',
+	'newtoki_market_intel.py', 'newtoki_work_meta.py',
+}
 
 def env_for_step() -> dict[str, str]:
 	"""Collector output roots default to $HOME, which is what staging reads."""
