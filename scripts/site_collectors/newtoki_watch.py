@@ -132,8 +132,10 @@ JS_READ_EVIDENCE = r"""
 	const episodes = Array.from(document.querySelectorAll('a.item-subject'))
 		.map(a => (a.getAttribute('href') || '').match(/nv-\d+-(\d+)/))
 		.filter(Boolean).map(m => parseInt(m[1], 10));
+	// The listing's header cell carries the same class as the data cells, so an
+	// unfiltered read makes the column label ("날짜") the latest upload date.
 	const dates = Array.from(document.querySelectorAll('.wr-date'))
-		.map(el => text(el)).filter(Boolean);
+		.map(el => text(el)).filter(v => v && /\d{2,4}[.\-/]\d{1,2}/.test(v));
 	const body = document.body.innerText;
 	const views = (body.match(/조회\s*([\d,]+)/g) || []).slice(0, 5);
 	return JSON.stringify({
