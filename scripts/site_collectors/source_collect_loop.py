@@ -35,6 +35,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import datetime as dt
+import gzip
 import json
 import os
 import re
@@ -143,25 +144,61 @@ def parse_feed(body: str, base: str) -> list[dict]:
 	return [i for i in items if i.get('url')]
 
 
-def parse_sitemap(body: str) -> tuple[list[dict], list[str]]:
-	"""(url entries, nested sitemap urls)."""
+def decompress(payload: bytes) -> bytes:
+	"""Gunzip when the bytes are a gzip member.
+
+	Sitemap indexes routinely point at `.xml.gz` children — geonames alone has
+	268 of them. Those arrive as gzip *files*, not gzip transfer-encoding, so
+	the HTTP layer hands them over compressed, the XML parse fails, and the
+	source silently reports zero. Detected by magic number rather than by file
+	extension, since the extension lies often enough.
+	"""
+	if payload[:2] == bytes((0x1F, 0x8B)):
+		try:
+			return gzip.decompress(payload)
+		except (OSError, EOFError):
+			return payload
+	return payload
+
+
+def _local(element: ET.Element) -> str:
+	"""Tag without its namespace — some sitemaps declare none, or a private one."""
+	return element.tag.rsplit('}', 1)[-1]
+
+
+def _child_text(node: ET.Element, name: str) -> str | None:
+	for child in node:
+		if _local(child) == name:
+			return (child.text or '').strip() or None
+	return None
+
+
+def parse_sitemap(payload: bytes | str) -> tuple[list[dict], list[str]]:
+	"""(url entries, nested sitemap urls). Namespace-agnostic, gzip-aware."""
+	raw = payload.encode('utf-8', 'replace') if isinstance(payload, str) else decompress(payload)
 	try:
-		root = ET.fromstring(body.encode('utf-8', 'replace'))
+		root = ET.fromstring(raw)
 	except ET.ParseError:
 		return [], []
-	nested = [_text(node.find('sm:loc', NS)) for node in root.findall('sm:sitemap', NS)]
-	entries = []
-	for node in root.findall('sm:url', NS):
-		loc = _text(node.find('sm:loc', NS))
-		if not loc:
-			continue
-		entries.append({
-			'url': loc,
-			'published': _text(node.find('sm:lastmod', NS)),
-			'changefreq': _text(node.find('sm:changefreq', NS)),
-			'priority': _text(node.find('sm:priority', NS)),
-		})
-	return entries, [n for n in nested if n]
+	nested: list[str] = []
+	entries: list[dict] = []
+	for node in root:
+		tag = _local(node)
+		if tag == 'sitemap':
+			loc = _child_text(node, 'loc')
+			if loc:
+				nested.append(loc)
+		elif tag == 'url':
+			loc = _child_text(node, 'loc')
+			if not loc:
+				continue
+			entries.append({
+				'url': loc,
+				'published': _child_text(node, 'lastmod'),
+				'changefreq': _child_text(node, 'changefreq'),
+				'priority': _child_text(node, 'priority'),
+			})
+	return entries, nested
 
 
 def parse_json_ld(body: str, base: str) -> list[dict]:
@@ -281,6 +318,15 @@ def existing_urls(source_id: str) -> set[str]:
 	return urls
 
 
+async def fetch_bytes(session: aiohttp.ClientSession, url: str) -> tuple[int | None, bytes]:
+	"""Raw bytes, so a gzip member is not mangled by text decoding."""
+	try:
+		async with session.get(url, timeout=aiohttp.ClientTimeout(total=40)) as response:
+			return response.status, await response.read()
+	except Exception:  # noqa: BLE001
+		return None, b''
+
+
 async def fetch(session: aiohttp.ClientSession, url: str, cursor: dict) -> tuple[int | None, str, dict]:
 	"""Conditional GET so a resumed pass asks for changes, not the whole thing."""
 	headers = {}
@@ -334,9 +380,11 @@ async def collect_source(session: aiohttp.ClientSession, source: dict, state: di
 			# One level of nesting, bounded child count: enough to reach a real
 			# inventory without walking an entire site.
 			for nested_url in nested[:SITEMAP_CHILDREN]:
-				nested_status, nested_body, _ = await fetch(session, nested_url, {})
-				if nested_status == 200 and nested_body:
-					items.extend(parse_sitemap(nested_body)[0])
+				nested_status, nested_bytes = await fetch_bytes(session, nested_url)
+				if nested_status == 200 and nested_bytes:
+					items.extend(parse_sitemap(nested_bytes)[0])
+				if len(items) >= ITEM_CAP:
+					break
 				await asyncio.sleep(DELAY)
 		else:
 			items.extend(parse_json_ld(body, target))
