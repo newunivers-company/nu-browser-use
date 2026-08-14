@@ -87,6 +87,10 @@ WEEKLY: list[tuple[str, list[str], int]] = [
 	# Browser-driven, so slowest and last: a hung page must not delay the rest.
 	('shortmax', [str(HERE / 'shortmax_collect.py')], 60),
 	('flextv', [str(HERE / 'flextv_collect.py'), '--genres', '6'], 60),
+	# Cover art for whatever the daily catalogue runs added this week. Weekly
+	# rather than daily because a download pass over unchanged titles is pure
+	# cost — the collector skips what is already on disk.
+	('catalog_posters', [str(HERE / 'catalog_posters.py')], 45),
 	# Analysis runs after the catalogues it reads, never before.
 	('title_join', [str(HERE / 'title_join.py')], 10),
 	('trope_rank', [str(HERE / 'trope_rank.py')], 10),
