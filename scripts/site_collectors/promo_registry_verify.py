@@ -32,14 +32,16 @@ import re
 import sys
 from pathlib import Path
 from urllib.parse import urlsplit
+from urllib.robotparser import RobotFileParser
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
 	sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 import aiohttp
-import yaml
 
-REGISTRY = Path(__file__).parent / 'registry' / 'promotion_channels.yaml'
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from registry.models import AccessTier, Channel, load_registry  # noqa: E402
+
 OUT_DIR = Path(os.environ.get('PROMO_OUT', str(Path.home() / 'promo_export')))
 UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36'
 # Sites reject bare aiohttp requests (col.com 405, vigloo-blog 403) purely for
@@ -56,11 +58,6 @@ CONCURRENCY = 6
 WALL_MARKERS = (('authwall', 'authwall'), ('loginPage', 'login_shell'), ('Join now', 'linkedin_join'))
 # UA tokens that identify an AI-crawler group in robots.txt.
 AI_UA_TOKENS = ('anthropic-ai', 'claudebot', 'claude-user', 'claude-searchbot', 'gptbot', 'oai-searchbot', 'chatgpt-user', 'perplexitybot', 'google-extended', 'ccbot', 'bytespider', 'meta-externalagent', 'applebot-extended')
-
-
-def load_registry() -> dict:
-	with REGISTRY.open(encoding='utf-8') as handle:
-		return yaml.safe_load(handle)
 
 
 def _parse_groups(text: str) -> list[tuple[set[str], list[tuple[bool, str]]]]:
@@ -113,22 +110,28 @@ def robots_verdict(text: str, path: str) -> dict:
 	"""Evaluate robots.txt for this path, separating two distinct questions.
 
 	`star` is what a generic unnamed crawler may do — that is the rule that
-	binds us. `ai_named_disallow` is whether the host has singled out AI
-	crawlers with a blanket block. The two diverge constantly: TikTok's `*`
-	group actually Allows /@user paths and only the AI group is blocked, and
-	Medium's feed is likewise open to `*` but shut to ClaudeBot. Collapsing
-	them into one verdict (the first version of this function did) both
-	overstates the technical barrier and hides the policy question.
+	binds us, and stdlib's RobotFileParser decides it (checked against the
+	hand-rolled group walker below on tiktok / medium / linkedin / linktr.ee /
+	dramashorts / reelshort: all six agreed, so the well-tested implementation
+	wins for the verdict that carries the policy weight).
+
+	`ai_named_disallow` is whether the host singled out AI crawlers with a
+	blanket block. RobotFileParser cannot answer that — it evaluates one agent
+	at a time and will not tell you *which* agents a group names — so the group
+	walker stays for this half. The two questions diverge constantly: TikTok's
+	`*` group actually allows /@user paths and only the AI group is blocked,
+	and Medium's feed is likewise open to `*` but shut to ClaudeBot. Collapsing
+	them (the first version of this function did) both overstates the technical
+	barrier and hides the policy question.
 	"""
 	if '<html' in text[:200].lower() or '<!doctype' in text[:200].lower():
 		return {'star': 'unknown', 'ai_named': [], 'ai_named_disallow': False}
-	groups = _parse_groups(text)
-	star = 'allow'
+	parser = RobotFileParser()
+	parser.parse(text.splitlines())
+	star = 'allow' if parser.can_fetch('*', path) else 'disallow'
 	ai_named: list[str] = []
 	ai_disallow = False
-	for agents, rules in groups:
-		if '*' in agents:
-			star = 'allow' if _group_allows(rules, path) else 'disallow'
+	for agents, rules in _parse_groups(text):
 		named = sorted(agents & set(AI_UA_TOKENS))
 		if named:
 			ai_named.extend(named)
@@ -163,19 +166,19 @@ async def fetch_robots(session: aiohttp.ClientSession, host: str, path: str, cac
 	return robots
 
 
-async def check(session: aiohttp.ClientSession, channel: dict, robots_cache: dict[str, dict], semaphore: asyncio.Semaphore) -> dict:
+async def check(session: aiohttp.ClientSession, channel: Channel, robots_cache: dict[str, dict], semaphore: asyncio.Semaphore, probe_blocked: bool = False) -> dict:
 	"""Resolve one channel: final URL, status, body fingerprint, robots verdict."""
-	url = channel['url']
+	url = str(channel.url)
 	row = {
 		'url': url,
-		'brand': channel.get('brand'),
-		'company': channel.get('company'),
-		'channel_type': channel['channel_type'],
-		'declared_tier': channel['access_tier'],
-		'declared_robots': channel.get('robots_verdict'),
-		'official_status': channel.get('official_status'),
+		'brand': channel.brand,
+		'company': channel.company,
+		'channel_type': channel.channel_type.value,
+		'declared_tier': channel.access_tier.value,
+		'declared_robots': channel.robots_verdict.value,
+		'official_status': channel.official_status.value,
 	}
-	if not channel.get('collect'):
+	if not (channel.collect or probe_blocked):
 		row |= {'result': 'skipped_by_policy', 'status': None, 'final_url': None}
 		return row
 
@@ -231,15 +234,17 @@ async def main() -> None:
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--probe-blocked', action='store_true', help='one-off audit only: also request collect:false channels')
 	parser.add_argument('--type', nargs='*', help='restrict to these channel_type values')
+	parser.add_argument('--tier', nargs='*', choices=[tier.value for tier in AccessTier], help='restrict to these access tiers')
 	args = parser.parse_args()
 
 	registry = load_registry()
-	channels = registry['channels']
+	channels = registry.channels
 	if args.type:
-		channels = [c for c in channels if c['channel_type'] in args.type]
+		channels = [c for c in channels if c.channel_type.value in args.type]
+	if args.tier:
+		channels = [c for c in channels if c.access_tier.value in args.tier]
 	if args.probe_blocked:
 		print('WARNING: --probe-blocked requests authwall / robots-prohibited channels. Audit use only.')
-		channels = [{**c, 'collect': True} for c in channels]
 
 	today = dt.date.today().isoformat()
 	now = dt.datetime.now(dt.timezone.utc).isoformat()
@@ -249,7 +254,7 @@ async def main() -> None:
 	robots_cache: dict[str, dict] = {}
 	semaphore = asyncio.Semaphore(CONCURRENCY)
 	async with aiohttp.ClientSession(headers=HEADERS) as session:
-		rows = await asyncio.gather(*(check(session, c, robots_cache, semaphore) for c in channels))
+		rows = await asyncio.gather(*(check(session, c, robots_cache, semaphore, args.probe_blocked) for c in channels))
 	rows = list(rows)
 
 	changes = diff(previous_snapshot(today), rows, now)

@@ -42,9 +42,10 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
 	sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 import aiohttp
-import yaml
 
-REGISTRY = Path(__file__).parent / 'registry' / 'promotion_channels.yaml'
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from registry.models import load_registry  # noqa: E402
+
 OUT_DIR = Path(os.environ.get('PROMO_OUT', str(Path.home() / 'promo_export')))
 LOOKUP = 'https://itunes.apple.com/lookup'
 UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36'
@@ -75,11 +76,6 @@ def classify(url: str) -> str:
 	if any(host in url.lower() for host in SOCIAL_HOSTS):
 		return 'social'
 	return 'site'
-
-
-def load_registry() -> dict:
-	with REGISTRY.open(encoding='utf-8') as handle:
-		return yaml.safe_load(handle)
 
 
 def normalize(url: str) -> str:
@@ -128,9 +124,8 @@ async def main() -> None:
 	args = parser.parse_args()
 
 	registry = load_registry()
-	brands = [b for b in registry['brands'] if b.get('app_ios')]
-	by_app = {b['app_ios']: b for b in brands}
-	known = {normalize(c['url']) for c in registry['channels']}
+	by_app = {b.app_ios: b for b in registry.brands if b.app_ios}
+	known = {normalize(str(c.url)) for c in registry.channels}
 
 	today = dt.date.today().isoformat()
 	now = dt.datetime.now(dt.timezone.utc).isoformat()
@@ -153,7 +148,7 @@ async def main() -> None:
 				description = result.get('description') or ''
 				row = {key: result.get(key) for key in KEEP}
 				row |= {
-					'brand': brand['id'], 'company': brand['company'], 'country': country,
+					'brand': brand.id, 'company': brand.company, 'country': country,
 					'description_sha256': hashlib.sha256(description.encode('utf-8')).hexdigest(),
 					'description_urls': extract_urls(description),
 					'release_notes': (result.get('releaseNotes') or '')[:1500],
@@ -163,11 +158,11 @@ async def main() -> None:
 				for url in row['description_urls']:
 					if normalize(url) not in known:
 						discoveries.append({
-							'url': url, 'kind': classify(url), 'brand': brand['id'], 'company': brand['company'],
+							'url': url, 'kind': classify(url), 'brand': brand.id, 'company': brand.company,
 							'evidence': f"appstore_description:{result['trackId']}:{country}",
 							'official_status': 'claimed', 'observed_at': now,
 						})
-			missing = sorted(by_app[i]['id'] for i in set(ids) - {r['trackId'] for r in results})
+			missing = sorted(by_app[i].id for i in set(ids) - {r['trackId'] for r in results})
 			print(f'  {country}: {len(results)}/{len(ids)} apps' + (f'  not on this storefront: {", ".join(missing)}' if missing else ''))
 
 	previous = previous_records(today)

@@ -16,13 +16,14 @@
 | Tier | 정의 | 채널 수 | 처리 |
 |---|---|---|---|
 | **T0** | 무인증 HTTP + robots 클린 + 구조화 데이터 | 20 | 수집 |
-| **T1** | 도달은 되나 JS 렌더/sitemap 없음 | 12 | CDP 필요, 후순위 |
-| **T2** | authwall 또는 robots 금지 | 33 | **레지스트리 등록만, 요청 안 함** |
+| **T1** | 도달은 되나 JS 렌더/sitemap 없음 | 13 | 브라우저 하네스로 5개 수집 중 |
+| **T2** | authwall 또는 robots 금지 | 38 | **레지스트리 등록만, 요청 안 함** |
 
 T2를 삭제하지 않고 남기는 게 설계 요점이다. **존재는 알되 긁지 않는다** —
 채널 소유관계는 기록되고, 나중에 정책이나 제휴 상황이 바뀌면 그대로 활성화된다.
-`collect: false`는 문서상 약속이 아니라 `promo_registry_verify.py`가 기계적으로
-강제한다(해당 URL을 아예 요청하지 않음).
+`collect: false`는 문서상 약속이 아니라 3중으로 강제된다: pydantic 불변식(로드 시 거부),
+`promo_registry_verify.py`(요청 자체를 안 함), `BrowserProfile.prohibited_domains`
+(브라우저가 내비게이션 거부).
 
 ## 실증 검증 결과 (2026-08-14)
 
@@ -134,14 +135,85 @@ fuzzy join 레이어 별도 필요 — D+7 과제.
 ## 구현 현황
 
 ```
-scripts/site_collectors/registry/promotion_channels.yaml   ✅ 회사 17 / 브랜드 14 / 채널 65
+scripts/site_collectors/registry/promotion_channels.yaml   ✅ 회사 17 / 브랜드 14 / 채널 71
+scripts/site_collectors/registry/models.py                 ✅ pydantic 검증 + 정책 불변식
 scripts/site_collectors/promo_registry_verify.py           ✅ 주1회
 scripts/site_collectors/appstore_watch.py                  ✅ 일1회
+scripts/site_collectors/promo_browser_collect.py           ✅ T1 브라우저 하네스, 주1회
+tests/ci/test_promotion_registry.py                        ✅ 18 tests
 scripts/site_collectors/corpsite_watch.py                  ⬜ D+2
 scripts/site_collectors/feed_watch.py                      ⬜ D+1
 scripts/site_collectors/telegram_card.py                   ⬜ D+1
 scripts/site_collectors/careers_watch.py                   ⬜ D+3
 ```
+
+### 프로젝트 자산 재사용 (고도화 2026-08-14)
+
+초기 구현은 이 저장소가 이미 가진 것을 쓰지 않고 다시 만들었다. 세 군데를 정정한다.
+
+**(1) `scripts/data_source_catalog.py` 패턴 채택 → `registry/models.py`**
+
+기존에 `tests/data_sources.yaml`용 pydantic 검증 계층이 이미 있었고 `DataSourceAccess`
+enum은 사실상 같은 개념이었다. 같은 스타일(StrEnum + `ConfigDict(extra='forbid')` +
+`model_validator(mode='after')`)로 레지스트리 검증기를 만들었다.
+
+이게 중요한 이유: 이전까지 수집 정책은 **YAML 주석 안의 산문**이었다. `access_tier` 오타나
+`collect: false` 누락이 조용히 통과하면 authwall 채널을 긁게 된다. 이제 정책 문장이
+불변식이 된다 —
+
+- T2 ⟹ `collect: false`
+- `decision_pending` ⟹ `collect: false`
+- `robots_verdict: disallow` ⟹ `collect: false`
+- `official_status: verified` ⟹ `official_evidence` 필수
+- brand/company 참조 무결성, URL 유일성
+
+도입 즉시 실제 오류 4건을 잡았다(TikTok 행의 `named_block`이 실제 판정값 `named_ai_block`과
+불일치 — 손으로 쓴 값이라 아무도 못 봄).
+
+**(2) `BrowserProfile.prohibited_domains` → 정책의 기계적 강제**
+
+`PromotionRegistry.prohibited_domains()`가 T2 호스트 집합을 BrowserProfile 패턴으로
+내보낸다. SecurityWatchdog가 이걸 강제하므로 **차단 채널은 "요청하지 않는" 게 아니라
+"도달 불가"가 된다.** 페이지가 LinkedIn을 링크하든 리다이렉트가 걸리든 브라우저가 거부한다.
+정책이 스크립트가 지키는 약속에서 브라우저의 속성으로 바뀐다.
+
+`tests/ci/test_promotion_registry.py`가 이걸 검증한다 — T2 채널 38개 전 URL이 실제로
+거부되는지, 서브도메인(`kr.linkedin.com`)까지 막히는지, 그러면서 T1 대상은 여전히
+도달 가능한지.
+
+**(3) 표준 라이브러리 `RobotFileParser`로 교체**
+
+손으로 짠 RFC 9309 파서를 실제 robots.txt 6종(tiktok/medium/linkedin/linktr.ee/
+dramashorts/reelshort)에서 stdlib와 교차검증했고 **6건 전부 판정 일치**. `star` 판정은
+검증된 stdlib로 넘기고, 직접 짠 그룹 워커는 stdlib가 못 하는 일(어떤 AI UA가 지목됐는지
+열거)만 담당하도록 축소했다.
+
+### `promo_browser_collect.py` — T1 하네스
+
+계획서의 "D+4 CDP 4개"를 사이트별 스크립트 대신 **레지스트리 구동 단일 하네스**로 대체했다.
+이 디렉터리의 기존 CDP 콜렉터들은 전부 생 `cdp_use.CDPClient` 위에 자기 `Runtime.evaluate`
+래퍼를 다시 만드는 패턴인데, 이 저장소가 곧 `BrowserSession`이므로 그걸 쓴다.
+추가로 얻는 것: 워치독 기반 내비게이션 제한, 이벤트버스 생명주기 관리, 실행별 격리 프로필
+(운영자의 로그인 쿠키를 상속하지 않음 — 익명 방문자 읽기가 구조적으로 보장된다).
+
+첫 실행 결과 5/5 성공, **HTTP로는 안 보이던 카탈로그 라우트가 드러났다**:
+
+| 대상 | 렌더 후 | 발견된 카탈로그 라우트 |
+|---|---|---|
+| goodshort | 18,210자 / 136링크 | `/drama/<id>`×45, `/tag/<id>`×61 |
+| shortmax (shorttv.live) | 31,488자 / 160링크 | `/drama/<id>`×67, `/episode/<id>`×67 |
+| flextv | 180링크 | `/episodes/<id>`×109, `/genres/<id>`×46 |
+| flareflow | 3,032자 / 1링크 | 없음 — 렌더 후에도 셸 |
+| dramawave | 74자 / 3링크 | 없음 — 빈 사이트 확인 |
+
+flextv는 aiohttp로는 `ClientResponseError`가 나는데 브라우저로는 정상 수집된다.
+flareflow/dramawave가 렌더 후에도 비어 있다는 건 **부정적 결과지만 확정된 사실**이라,
+더 이상 파볼 필요가 없다는 판단 근거가 된다.
+
+경로 shape 집계(`catalog_families`)는 다음 콜렉터가 사이트별 추측 없이 페이징할 지점을
+알려준다. 그리고 자사 사이트 푸터에서 **ShortMax·FlexTV의 공식 SNS 6개를 1차 출처로
+확보**했다 — 조사 문서에 ShortMax 소셜은 아예 없었다. 전부 `official_evidence: site_footer`,
+`verified`로 등록(단 T2라 수집은 안 함).
 
 출력은 기존 규약 승계: `~/promo_export/` → NAS `X:\nu-browser-use\promo_export` → G드라이브.
 
@@ -191,7 +263,7 @@ discovery는 URL을 자동 등록하지 않는다. 발견은 주장(claim)이지
 | D+1 | `telegram_card.py`(구독자 시계열) + `feed_watch.py`(RSS/Atom) — 둘 다 소품, 시계열은 빨리 시작할수록 이득 |
 | D+2 | `corpsite_watch.py` — T0 기업/제작사 사이트 본문 해시 델타 |
 | D+3 | `careers_watch.py` — ATS 슬러그 **discovery부터**(greenhouse/lever 추측은 404 확인) |
-| D+4 | T1 CDP 4개: goodshort, flextv, flareflow, mydramawave |
+| D+4 | ~~T1 CDP 4개~~ → `promo_browser_collect.py`로 완료. 다음 단계는 발견된 카탈로그 라우트(`/drama/<id>` 등) 페이징 |
 | D+5 | `a.flextv.cc` 제휴 조건 파서 (단발, UA 전략 원문) |
 | D+7 | title fuzzy-join → 기존 `RankingObservation`과 결합 |
 
