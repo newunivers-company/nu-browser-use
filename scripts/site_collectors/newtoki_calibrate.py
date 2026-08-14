@@ -58,10 +58,9 @@ from newtoki_watch import (
 	NEAR_THRESHOLD,
 	classify,
 	fragments,
-	normalize,
 	search,
-	similarity,
 )
+from textmatch import normalize, similarity
 
 from browser_use.browser.profile import BrowserProfile
 from browser_use.browser.session import BrowserSession

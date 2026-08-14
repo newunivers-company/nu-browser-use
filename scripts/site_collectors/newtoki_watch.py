@@ -73,12 +73,14 @@ import os
 import re
 import sys
 import tempfile
-import unicodedata
 from pathlib import Path
 from urllib.parse import quote
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
 	sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
+from textmatch import classify as _classify
+from textmatch import normalize
 
 from browser_use.browser.events import NavigateToUrlEvent
 from browser_use.browser.profile import BrowserProfile
@@ -158,44 +160,9 @@ JS_READ_EVIDENCE = r"""
 """
 
 
-def normalize(title: str) -> str:
-	"""Fold a title for comparison.
-
-	Curly apostrophes are the practical trap: our catalog writes "Dragon's"
-	with U+2019 while a pirate index types an ASCII quote, and a raw substring
-	test then silently misses a real hit.
-	"""
-	folded = unicodedata.normalize('NFKC', title).casefold()
-	for curly, plain in (('’', "'"), ('‘', "'"), ('“', '"'), ('”', '"')):
-		folded = folded.replace(curly, plain)
-	return re.sub(r'[^0-9a-z가-힣]+', '', folded)
-
-
-def bigrams(value: str) -> set[str]:
-	return {value[i : i + 2] for i in range(len(value) - 1)} or {value}
-
-
-def similarity(left: str, right: str) -> float:
-	"""Character-bigram Jaccard.
-
-	Word tokenization is useless on Korean, where a title is often one
-	whitespace-free run; bigrams degrade gracefully across both scripts.
-	"""
-	if not left or not right:
-		return 0.0
-	a, b = bigrams(left), bigrams(right)
-	return len(a & b) / len(a | b)
-
-
 def classify(our_normalized: str, candidate_title: str) -> tuple[str, float]:
-	"""exact | near | none, with the score that decided it."""
-	other = normalize(candidate_title)
-	if not our_normalized or not other:
-		return 'none', 0.0
-	if our_normalized in other or other in our_normalized:
-		return 'exact', 1.0
-	score = similarity(our_normalized, other)
-	return ('near', score) if score >= NEAR_THRESHOLD else ('none', score)
+	"""exact | near | none, at this watch's near threshold."""
+	return _classify(our_normalized, candidate_title, NEAR_THRESHOLD)
 
 
 # Fragment probing. Site search is substring-based (measured: whitespace
