@@ -1,5 +1,5 @@
-version: 1
-last_reviewed: 2026-08-12
+version: 2
+last_reviewed: 2026-08-14
 sources:
   - id: amazon
     name: Amazon Search
@@ -673,3 +673,1389 @@ sources:
     test_level: availability
     expected_http_statuses: [200]
     description: Stable public fixture for paginated product extraction.
+
+  # --- Character Intelligence ---
+
+  - id: anilist_characters
+    name: "AniList Characters"
+    category: documentation
+    url: https://anilist.co/search/characters
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Fictional-character reference DB (favourites, gender, media roles) via public GraphQL."
+
+  - id: wikidata_query
+    name: "Wikidata"
+    category: documentation
+    url: https://www.wikidata.org/wiki/Wikidata:Main_Page
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Structured entity graph for real and fictional persons, occupations, and relations; character knowledge graph."
+
+  - id: tvtropes
+    name: "TV Tropes"
+    category: documentation
+    url: https://tvtropes.org/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Character archetype/trope taxonomy; REFERENCE_ONLY, derived ontology only (no bulk copy)."
+
+  - id: kmdb
+    name: "KMDb"
+    category: documentation
+    url: https://www.kmdb.or.kr/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Korean Film Archive DB: works/filmmakers/images for era-based character analysis."
+
+  - id: kobis_people
+    name: "KOBIS Filmmakers"
+    category: documentation
+    url: https://www.kobis.or.kr/kobis/business/mast/peop/searchPeopleList.do
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Korean film council actor/crew filmographies for role-pattern mining."
+
+  - id: characterhub
+    name: "CharacterHub"
+    category: social_media
+    url: https://characterhub.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Original-character community; derived tag/pattern distribution only (no OC copy)."
+
+  - id: unvale
+    name: "Unvale"
+    category: social_media
+    url: https://unvale.io/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Original-character discovery; reference/derived pattern only."
+
+  - id: toyhouse
+    name: "Toyhouse"
+    category: social_media
+    url: https://toyhou.se/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Large OC community; manual trend/reference source (low automation access)."
+
+  - id: worldanvil
+    name: "World Anvil"
+    category: documentation
+    url: https://www.worldanvil.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Worldbuilding character templates as Character Bible data-model reference."
+
+  - id: character_ai
+    name: "Character.AI"
+    category: social_media
+    url: https://character.ai/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "AI-persona demand ecosystem; archetype statistics only (no character/likeness copy)."
+
+  - id: talkie_ai
+    name: "Talkie"
+    category: social_media
+    url: https://www.talkie-ai.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "AI-character categories for relationship-fantasy archetypes (CEO/mafia/roommate)."
+
+  - id: polybuzz
+    name: "PolyBuzz"
+    category: social_media
+    url: https://www.polybuzz.ai/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "AI-persona trend discovery: category/tag/popular-archetype signals."
+
+  - id: chai_ai
+    name: "Chai"
+    category: social_media
+    url: https://www.chai-ai.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "User-generated AI-persona ecosystem for cross-platform character trend."
+
+  - id: casting_networks
+    name: "Casting Networks"
+    category: documentation
+    url: https://www.castingnetworks.com/
+    access: login_required
+    test_level: availability
+    expected_http_statuses: [200, 401, 403]
+    description: "Professional casting directory; LIKENESS_RISK, no bulk/AI-dataset use — search only."
+
+  - id: backstage_talent
+    name: "Backstage"
+    category: documentation
+    url: https://www.backstage.com/talent-directory/
+    access: login_required
+    test_level: availability
+    expected_http_statuses: [200, 401, 403]
+    description: "Actor/model/voice/UGC talent directory; likeness risk, reference casting only."
+
+  - id: actors_access
+    name: "Actors Access"
+    category: documentation
+    url: https://actorsaccess.com/
+    access: login_required
+    test_level: availability
+    expected_http_statuses: [200, 401, 403]
+    description: "US casting profiles (headshot/resume/skills); likeness risk, reference only."
+
+  - id: spotlight_uk
+    name: "Spotlight"
+    category: documentation
+    url: https://www.spotlight.com/
+    access: login_required
+    test_level: availability
+    expected_http_statuses: [200, 401, 403]
+    description: "UK/EU casting directory; likeness risk, reference only."
+
+  - id: models_com
+    name: "Models.com"
+    category: documentation
+    url: https://models.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Fashion model/new-face database as visual character-archetype reference."
+
+  - id: artstation
+    name: "ArtStation"
+    category: social_media
+    url: https://www.artstation.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Character concept/costume art for fantasy/genre visual design reference."
+
+  - id: behance
+    name: "Behance"
+    category: social_media
+    url: https://www.behance.net/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Creative character/costume/editorial design discovery."
+
+  - id: midjourney_explore
+    name: "Midjourney Explore"
+    category: social_media
+    url: https://www.midjourney.com/explore
+    access: login_required
+    test_level: availability
+    expected_http_statuses: [200, 401, 403]
+    description: "Community character concepts + prompts; derive visual tokens/style only."
+
+  - id: artbreeder
+    name: "Artbreeder"
+    category: documentation
+    url: https://www.artbreeder.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Face/character visual exploration (splice/mix) for appearance combinations."
+
+  - id: generated_photos
+    name: "Generated Photos"
+    category: documentation
+    url: https://generated.photos/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Synthetic-face reference by age/gender/ethnicity; per license (no stockpiling/ML)."
+
+  - id: picrew
+    name: "Picrew"
+    category: social_media
+    url: https://picrew.me/en/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Stylized character-maker combinations; reference-only (per-maker license varies)."
+
+  - id: metahuman
+    name: "MetaHuman"
+    category: documentation
+    url: https://www.metahuman.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Digital-human production prototype from character seed."
+
+  - id: fab_metahuman
+    name: "Fab MetaHuman"
+    category: commerce
+    url: https://www.fab.com/channels/metahuman
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Ready-made MetaHuman/outfit/groom assets for fast previs."
+
+  - id: reallusion_cc
+    name: "Reallusion Character Creator"
+    category: commerce
+    url: https://www.reallusion.com/character-creator/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Realistic/stylized 3D character production prototype (Headshot from image)."
+
+  - id: heroforge
+    name: "Hero Forge"
+    category: commerce
+    url: https://www.heroforge.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Fast fantasy/sci-fi/historical character silhouette assembly."
+
+  - id: ipip
+    name: "IPIP"
+    category: documentation
+    url: https://ipip.ori.org/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Public-domain personality item pool for data-driven Big-Five character profiles."
+
+  - id: onet_online
+    name: "O*NET"
+    category: documentation
+    url: https://www.onetonline.org/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Occupation tasks/skills/context to ground professional characters realistically."
+
+  - id: behindthename
+    name: "Behind the Name"
+    category: documentation
+    url: https://www.behindthename.com/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Name selection by country/era/gender/meaning for period-accurate characters."
+
+  - id: ssa_baby_names
+    name: "SSA Baby Names"
+    category: documentation
+    url: https://www.ssa.gov/OACT/babynames/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "US name popularity since 1880 for era-accurate American character naming."
+
+  - id: unsplash_ref
+    name: "Unsplash"
+    category: documentation
+    url: https://unsplash.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Gesture/wardrobe/composition reference; portrait/publicity rights + no ML dataset."
+
+  - id: pexels_ref
+    name: "Pexels"
+    category: documentation
+    url: https://www.pexels.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Photo/video reference; per API terms (no bulk copy / ML dataset)."
+
+  - id: jikan_moe
+    name: "Jikan (MAL)"
+    category: documentation
+    url: https://jikan.moe/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Unofficial MyAnimeList API; P2 cross-validation only (scraping-based)."
+
+  # --- Story Material Intelligence ---
+
+  - id: ridi_webnovel
+    name: "RIDI Webnovel"
+    category: commerce
+    url: https://ridibooks.com/webnovel/recommendation
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Korean web-novel ranking, keywords, and public synopsis for trope/relationship mining."
+
+  - id: ridi_webtoon
+    name: "RIDI Webtoon"
+    category: commerce
+    url: https://ridibooks.com/webtoon/recommendation
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Korean webtoon ranking with original-author/studio adaptation signals."
+
+  - id: kakaopage_ranking
+    name: "KakaoPage Ranking"
+    category: commerce
+    url: https://page.kakao.com/menu/10011
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Mass-market Korean webnovel/webtoon ranking incl. male/female audience splits."
+
+  - id: naver_series_novel
+    name: "Naver Series TOP100"
+    category: commerce
+    url: https://series.naver.com/novel/top100List.series
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Daily/weekly/monthly web-novel ranking with rank-velocity and promotion flags."
+
+  - id: munpia_best
+    name: "Munpia Weekly Best"
+    category: commerce
+    url: https://www.munpia.com/best/plsa.weekly
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Male-oriented Korean web-novel premise dataset via paid weekly best-sellers."
+
+  - id: novelpia_plus
+    name: "Novelpia PLUS"
+    category: commerce
+    url: https://novelpia.com/plus/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Emerging/niche Korean web-novel tags and reader signals."
+
+  - id: joara_todaybest
+    name: "Joara Best"
+    category: commerce
+    url: https://www.joara.com/todaybest
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Korean web-novel best charts with reader-language tags."
+
+  - id: naver_bestchallenge
+    name: "Naver Best Challenge"
+    category: social_media
+    url: https://m.comic.naver.com/bestChallenge/genre
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Early amateur webtoon IP discovery with compressed loglines."
+
+  - id: storyum
+    name: "Storyum"
+    category: documentation
+    url: https://www.storyum.kr/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Rights-ready story deal-flow: loglines, synopses, adaptation-target metadata."
+
+  - id: kpipa_ip
+    name: "KPIPA IP Support"
+    category: documentation
+    url: https://www.kpipa.or.kr/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Korean publishing agency web-novel secondary-adaptation support signals."
+
+  - id: webtoons_global
+    name: "WEBTOON Global Ranking"
+    category: commerce
+    url: https://www.webtoons.com/en/ranking
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Global webtoon Trending/Popular/Originals/Canvas charts by genre."
+
+  - id: tapas
+    name: "Tapas"
+    category: commerce
+    url: https://tapas.io/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Global comic+novel Popular/Trending/Fresh charts with views/likes/subscribers."
+
+  - id: inkitt
+    name: "Inkitt"
+    category: commerce
+    url: https://www.inkitt.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Reader-data-driven web fiction feeding GALATEA/CandyJar screen adaptations."
+
+  - id: goodnovel_rankings
+    name: "GoodNovel Rankings"
+    category: commerce
+    url: https://www.goodnovel.com/rankings
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Short-drama-adjacent romance web-fiction ranked by category (CEO, werewolf, etc.)."
+
+  - id: webfic
+    name: "Webfic"
+    category: commerce
+    url: https://www.webfic.com/ko/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "English web-fiction tied to Dianzhong/DramaBox short-drama IP pipeline."
+
+  - id: webnovel_com
+    name: "WebNovel"
+    category: commerce
+    url: https://www.webnovel.com/ranking
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Global web-fiction ranking with rich story-grammar tags."
+
+  - id: royalroad_rising
+    name: "Royal Road Rising Stars"
+    category: social_media
+    url: https://www.royalroad.com/fictions/rising-stars
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Pre-commercial LitRPG/progression IP with structured tags and follower counts."
+
+  - id: manta
+    name: "Manta"
+    category: commerce
+    url: https://manta.net/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Novel-to-comic adaptation graph via novel-based tag filtering."
+
+  - id: tappytoon
+    name: "Tappytoon Million Reads"
+    category: commerce
+    url: https://www.tappytoon.com/en/million-reads
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Korean IP localized-English reader response by genre."
+
+  - id: novelupdates
+    name: "Novel Updates"
+    category: social_media
+    url: https://www.novelupdates.com/series-finder/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "KR/CN/JP web-novel aggregator with AND/OR tag taxonomy and reviews."
+
+  - id: kakuyomu_ranking
+    name: "Kakuyomu Weekly Ranking"
+    category: social_media
+    url: https://kakuyomu.jp/rankings/all/weekly
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Japanese web-novel weekly ranking with stars/genre/tags."
+
+  - id: narou_ranking
+    name: "Narou Ranking"
+    category: social_media
+    url: https://yomou.syosetu.com/rank/top/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Large Japanese web-novel index; isekai/villainess premise discovery."
+
+  - id: piccoma_novel
+    name: "Piccoma Novel Ranking"
+    category: commerce
+    url: https://piccoma.com/web/ranking/N/K/0
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Japan commercial validation for KR/CN novel/SMARTOON localization."
+
+  - id: fanqie_rank
+    name: "Fanqie Novel Ranking"
+    category: commerce
+    url: https://fanqienovel.com/rank
+    access: anti_bot_protected
+    test_level: availability
+    expected_http_statuses: [200, 403, 503]
+    description: "Chinese mass-market web-novel reading/new-book charts with explicit tropes."
+
+  - id: jjwxc
+    name: "JJWXC"
+    category: commerce
+    url: https://www.jjwxc.net/
+    access: anti_bot_protected
+    test_level: availability
+    expected_http_statuses: [200, 403, 503]
+    description: "Chinese female-oriented web-novel charts (danmei, quick-transmigration)."
+
+  - id: qidian_hotsales
+    name: "Qidian Hot Sales"
+    category: commerce
+    url: https://www.qidian.com/rank/hotsales/
+    access: anti_bot_protected
+    test_level: availability
+    expected_http_statuses: [200, 403, 503]
+    description: "Chinese male-oriented web-novel sales/monthly-ticket rankings."
+
+  - id: kuaikan_ranking
+    name: "Kuaikan Manhua Ranking"
+    category: commerce
+    url: https://www.kuaikanmanhua.com/ranking/
+    access: anti_bot_protected
+    test_level: availability
+    expected_http_statuses: [200, 403, 503]
+    description: "Chinese webtoon ranking exposing novel-to-comic original-author edges."
+
+  - id: bomtoon_ranking
+    name: "Bomtoon Ranking"
+    category: commerce
+    url: https://www.bomtoon.com/bom/comic/ranking
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Korean female-oriented/BL/romance webtoon rankings."
+
+  - id: lezhin_ranking
+    name: "Lezhin Ranking"
+    category: commerce
+    url: https://www.lezhin.com/ko/ranking
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Korean webtoon rankings; ranking/public-metadata only per site ToS."
+
+  - id: mrblue_novel
+    name: "Mr.Blue Novel Ranking"
+    category: commerce
+    url: https://www.mrblue.com/novel/ranking
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Korean novel rankings incl. inbound translated CN web-novels."
+
+  - id: bookcube
+    name: "BookCube"
+    category: commerce
+    url: https://www.bookcube.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Korean IP/author-management platform for expansion-graph modeling."
+
+  - id: dramabox
+    name: "DramaBox"
+    category: commerce
+    url: https://www.dramabox.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Vertical short-drama catalog (multi-locale) for romance conflict grammar."
+
+  - id: goodshort
+    name: "GoodShort"
+    category: commerce
+    url: https://www.goodshort.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Vertical short-drama catalog for adaptation-target conflict patterns."
+
+  # --- Content Update Intelligence ---
+
+  - id: tvmaze
+    name: "TVmaze"
+    category: documentation
+    url: https://www.tvmaze.com/api
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "CC BY-SA public TV API: full future schedule, per-day show updates, cast/episodes."
+
+  - id: tmdb
+    name: "TMDB"
+    category: documentation
+    url: https://www.themoviedb.org/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Movie/TV metadata with Changes/OnTheAir/Discover for release change-detection."
+
+  - id: kobis
+    name: "KOBIS"
+    category: documentation
+    url: https://www.kobis.or.kr/kobis/business/main/main.do
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Korean film council official release/box-office source of truth."
+
+  - id: circle_chart
+    name: "Circle Chart"
+    category: documentation
+    url: https://circlechart.kr/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Korean official music charts (digital/streaming/album/social) for release results."
+
+  - id: melon_new
+    name: "Melon New Music"
+    category: commerce
+    url: https://www.melon.com/new/index.htm
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "K-pop release detection via latest singles/albums."
+
+  - id: blip_kpop
+    name: "Blip"
+    category: documentation
+    url: https://blip.kr/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Aggregated real-time K-pop artist schedule (comeback/broadcast/event) discovery."
+
+  - id: kpop_radar
+    name: "K-pop Radar"
+    category: documentation
+    url: https://www.kpop-radar.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Quantitative K-pop growth (MV views, SNS, streaming) time series."
+
+  - id: kprofiles_comebacks
+    name: "KProfiles Comeback Calendar"
+    category: documentation
+    url: https://kprofiles.com/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Monthly K-pop comeback/debut calendar for pre-confirmation discovery."
+
+  - id: weverse_shop
+    name: "Weverse Shop Notices"
+    category: documentation
+    url: https://shop.weverse.io/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "First-party artist announcements: album pre-order, concert, streaming, events."
+
+  - id: kinolights
+    name: "Kinolights"
+    category: documentation
+    url: https://www.kinolights.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Korean OTT aggregator: new/leaving titles, rankings, box office across platforms."
+
+  - id: justwatch
+    name: "JustWatch"
+    category: documentation
+    url: https://www.justwatch.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Global streaming availability, new/upcoming by country and provider."
+
+  - id: asianwiki
+    name: "AsianWiki"
+    category: documentation
+    url: https://asianwiki.com/Main_Page
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Asian drama/film upcoming schedule and casting/teaser/trailer event updates."
+
+  - id: soompi_tvfilm
+    name: "Soompi TV/Film"
+    category: documentation
+    url: https://www.soompi.com/category/tvfilm
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "K-drama/film casting/teaser/premiere secondary discovery with actor tags."
+
+  - id: netflix_tudum
+    name: "Netflix Tudum"
+    category: documentation
+    url: https://www.netflix.com/tudum/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Netflix official slate: new/coming/leaving titles, trailers, casting, schedules."
+
+  - id: disney_press
+    name: "Disney+ Press"
+    category: documentation
+    url: https://press.disneyplus.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Disney+ official monthly premieres, new episodes, originals by date."
+
+  - id: cj_newsroom
+    name: "CJ ENM Newsroom"
+    category: documentation
+    url: https://newsroom.cj.net/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "CJ/tvN/TVING monthly content slate feed for K-content."
+
+  - id: coupang_newsroom
+    name: "Coupang Newsroom"
+    category: documentation
+    url: https://news.coupang.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Coupang Play casting/poster/trailer/release-date press releases."
+
+  - id: imdb_calendar
+    name: "IMDb Release Calendar"
+    category: documentation
+    url: https://www.imdb.com/calendar/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Country-scoped upcoming movie/TV release cross-validation."
+
+  - id: screendaily_production
+    name: "Screen Daily Production"
+    category: documentation
+    url: https://www.screendaily.com/news/production
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Industry-trade early signals: production start, casting, deals, sales."
+
+  # --- Style & Fashion Intelligence ---
+
+  - id: musinsa_snap
+    name: "Musinsa Snap"
+    category: commerce
+    url: https://www.musinsa.com/snap/main/today
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Korean real-outfit coordinates/rankings by gender and body type."
+
+  - id: kream
+    name: "KREAM"
+    category: commerce
+    url: https://kream.co.kr/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Korean resale: trending items, rising brands, transaction/resale-price signals."
+
+  - id: twentyninecm
+    name: "29CM"
+    category: commerce
+    url: https://www.29cm.co.kr/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Curated Korean contemporary/quiet-luxury style reference."
+
+  - id: ssfshop
+    name: "SSF Shop"
+    category: commerce
+    url: https://www.ssfshop.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Premium/formal Korean fashion rankings and designer brands."
+
+  - id: wear_jp
+    name: "WEAR by ZOZO"
+    category: commerce
+    url: https://wear.jp/coordinate/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Japanese real-outfit coordinate search by height/gender/occasion (14M+ looks)."
+
+  - id: naver_shopping_insight
+    name: "Naver Shopping Insight"
+    category: documentation
+    url: https://datalab.naver.com/shoppingInsight/sCategory.naver
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Korean category/keyword search-click trends by age/gender/device."
+
+  - id: google_trends
+    name: "Google Trends"
+    category: documentation
+    url: https://trends.google.com/trends/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Global search-demand validation for style/garment/brand terms."
+
+  - id: pinterest_trends
+    name: "Pinterest Trends"
+    category: social_media
+    url: https://trends.pinterest.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Visual early-signal trending keywords with WoW/MoM/YoY growth."
+
+  - id: tiktok_creative_center
+    name: "TikTok Creative Center"
+    category: social_media
+    url: https://ads.tiktok.com/business/creativecenter/
+    access: anti_bot_protected
+    test_level: availability
+    expected_http_statuses: [200, 403, 503]
+    description: "Fashion hashtag trend lines, post volume, and related-outfit interest."
+
+  - id: vogue_runway
+    name: "Vogue Runway"
+    category: documentation
+    url: https://www.vogue.com/fashion-shows
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Designer runway collections; derived garment/color/silhouette annotation only."
+
+  - id: tagwalk
+    name: "Tagwalk"
+    category: documentation
+    url: https://www.tag-walk.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Runway look/brand/trend taxonomy reference for style ontology."
+
+  - id: lyst_index
+    name: "Lyst Index"
+    category: commerce
+    url: https://www.lyst.com/the-lyst-index/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Quarterly hottest brands/products from search/view/purchase signals."
+
+  - id: stockx_about
+    name: "StockX Insights"
+    category: commerce
+    url: https://stockx.com/about/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Sneaker/streetwear breakout products, culture index, resale demand."
+
+  - id: depop_news
+    name: "Depop Trend Report"
+    category: commerce
+    url: https://news.depop.com/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Gen-Z/vintage/microtrend shifts from platform search+sales data."
+
+  - id: therealreal_trends
+    name: "The RealReal Trends"
+    category: commerce
+    url: https://www.therealreal.com/seller/insights/trends/women
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Luxury resale demand shifts for old-money/quiet-luxury character styling."
+
+  # --- Location & Environment Intelligence ---
+
+  - id: filmkorea_location
+    name: "FilmKorea Location"
+    category: documentation
+    url: https://location.filmkorea.or.kr/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Korean real filming-location DB classified for production use."
+
+  - id: seoul_film_commission
+    name: "Seoul Film Commission"
+    category: documentation
+    url: https://seoulfc.or.kr/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Seoul shooting permits, support procedures, and location DB."
+
+  - id: vworld
+    name: "VWorld"
+    category: documentation
+    url: https://www.vworld.kr/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Korean national 2D/3D spatial data, terrain, and buildings."
+
+  - id: seoul_smap
+    name: "Seoul S-Map"
+    category: documentation
+    url: https://smap.seoul.go.kr/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Seoul 3D digital twin: buildings, skyline, view/sunlight analysis."
+
+  - id: kakao_local
+    name: "Kakao Local"
+    category: documentation
+    url: https://developers.kakao.com/docs/latest/en/local/dev-guide
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Korean POI/address/category search for location discovery."
+
+  - id: kto_photos
+    name: "KTO Tourism Photos"
+    category: documentation
+    url: https://www.data.go.kr/data/15101914/openapi.do
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Korea Tourism Org ~100k geotagged photos as licensed visual seeds."
+
+  - id: openstreetmap
+    name: "OpenStreetMap"
+    category: documentation
+    url: https://www.openstreetmap.org/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Open global building/road/landuse geometry with structural attributes."
+
+  - id: overture_maps
+    name: "Overture Maps"
+    category: documentation
+    url: https://docs.overturemaps.org/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Open 75M+ global places and building footprints (GeoParquet base layer)."
+
+  - id: mapillary
+    name: "Mapillary"
+    category: documentation
+    url: https://www.mapillary.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Crowdsourced street-level imagery (24B+) for remote visual scouting."
+
+  - id: opentopography
+    name: "OpenTopography"
+    category: documentation
+    url: https://opentopography.org/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Global DEM/LiDAR elevation for slope/cliff/viewshed natural-location filtering."
+
+  - id: esa_worldcover
+    name: "ESA WorldCover"
+    category: documentation
+    url: https://esa-worldcover.org/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "10m global land-cover classification (forest/grassland/water) for environment."
+
+  - id: foursquare_places
+    name: "Foursquare Places"
+    category: documentation
+    url: https://foursquare.com/products/places-api/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Global POI discovery by function/category/popularity."
+
+  - id: cesium_osm_buildings
+    name: "Cesium OSM Buildings"
+    category: documentation
+    url: https://cesium.com/platform/cesium-ion/content/cesium-osm-buildings/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Global 3D building layer for virtual scout/previsualization."
+
+  - id: sentinel_hub
+    name: "Sentinel Hub"
+    category: documentation
+    url: https://www.sentinel-hub.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Satellite imagery API for seasonal vegetation/water/environment checks."
+
+  - id: geonames
+    name: "GeoNames"
+    category: documentation
+    url: https://www.geonames.org/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Open 11M+ place names (mountains/valleys/villages) for name-based discovery."
+
+  - id: wikimedia_commons_geo
+    name: "Wikimedia Commons Geosearch"
+    category: documentation
+    url: https://commons.wikimedia.org/wiki/Commons:Geocoding
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Landmark visual reference near coordinates; per-file license."
+
+  - id: archdaily
+    name: "ArchDaily"
+    category: documentation
+    url: https://www.archdaily.com/search/projects
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Architecture project reference (style/interior/exterior) for location matching."
+
+  - id: structurae
+    name: "Structurae"
+    category: documentation
+    url: https://structurae.net/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Large structures (bridges/dams/tunnels/towers) for scale locations."
+
+  - id: skyscraper_center
+    name: "Skyscraper Center"
+    category: documentation
+    url: https://www.skyscrapercenter.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Tall-building database (height/floors/material/function) for skyline reference."
+
+  - id: giggster
+    name: "Giggster"
+    category: commerce
+    url: https://giggster.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Bookable private filming locations with production-relevant filters."
+
+  - id: scouty
+    name: "Scouty"
+    category: commerce
+    url: https://www.scouty.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "AI location search (natural-language + image-similarity) benchmark; bookable."
+
+  - id: locationshub
+    name: "LocationsHub"
+    category: documentation
+    url: https://www.locationshub.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Global film-location reference DB (100k+ locations, 1.5M+ photos)."
+
+  # --- Location & Environment Intelligence (addendum) ---
+
+  - id: google_maps_platform
+    name: "Google Maps Platform"
+    category: documentation
+    url: https://mapsplatform.google.com/
+    access: login_required
+    test_level: availability
+    expected_http_statuses: [200, 401, 403]
+    description: "Places/Street View/Photorealistic 3D for remote scout UI; no permanent imagery/panoID storage."
+
+  - id: mapbox_search
+    name: "Mapbox Search"
+    category: documentation
+    url: https://www.mapbox.com/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Address/POI/geocoding incl. building-entrance for crew logistics; temporary-use terms."
+
+  - id: kartaview
+    name: "KartaView"
+    category: documentation
+    url: https://kartaview.org/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Open street-level imagery with location/timestamp/direction; Mapillary coverage backup."
+
+  - id: ms_building_footprints
+    name: "MS Global Building Footprints"
+    category: documentation
+    url: https://github.com/microsoft/GlobalMLBuildingFootprints
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Open ~1.4B building footprints (CDLA) with height estimates for bulk discovery."
+
+  - id: google_open_buildings
+    name: "Google Open Buildings"
+    category: documentation
+    url: https://sites.research.google/gr/open-buildings/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Open ~1.8B building footprints + 2.5D temporal height/presence change."
+
+  - id: natural_earth
+    name: "Natural Earth"
+    category: documentation
+    url: https://www.naturalearthdata.com/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Public-domain coarse geography (coastline/river/mountain) for first-pass region narrowing."
+
+  - id: protected_planet
+    name: "Protected Planet"
+    category: documentation
+    url: https://www.protectedplanet.net/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Protected/conservation areas API used as a shooting-restriction gate, not discovery."
+
+  - id: unesco_whl
+    name: "UNESCO World Heritage List"
+    category: documentation
+    url: https://whc.unesco.org/en/list/
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Cultural/natural heritage landmarks with coordinates; visual discovery + permission risk."
+
+  - id: arcgis_living_atlas
+    name: "ArcGIS Living Atlas"
+    category: documentation
+    url: https://livingatlas.arcgis.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Global GIS layers (imagery/environment/3D/historical) as supplemental coverage."
+
+  - id: planet_labs
+    name: "Planet"
+    category: documentation
+    url: https://www.planet.com/
+    access: login_required
+    test_level: availability
+    expected_http_statuses: [200, 401, 403]
+    description: "High-resolution/time-series satellite imagery API for high-budget scouting."
+
+  - id: maxar_discovery
+    name: "Maxar/Vantor Discovery"
+    category: documentation
+    url: https://developers.maxar.com/
+    access: login_required
+    test_level: availability
+    expected_http_statuses: [200, 401, 403]
+    description: "High-resolution imagery + 3D discovery (STAC/GeoJSON) for premium scouting."
+
+  - id: peerspace
+    name: "Peerspace"
+    category: commerce
+    url: https://www.peerspace.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Hourly-rentable residences/studios/private spaces for bookable filming locations."
+
+  - id: set_scouter
+    name: "Set Scouter"
+    category: commerce
+    url: https://www.setscouter.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Film-ready space taxonomy + scout reports (power/access/acoustics) as schema benchmark."
+
+  - id: filmplace
+    name: "Filmplace"
+    category: commerce
+    url: https://www.filmplace.co/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Global filming-location + crew marketplace with Korean service and booking flow."
+
+  # --- Character Intelligence (research/reference addendum) ---
+
+  - id: simschat_dataset
+    name: "SimsChat"
+    category: documentation
+    url: https://github.com/Bernard-Yang/SimsChat
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Persona-driven role-play dataset (68 characters x 1,360 situations) for character-dialogue consistency."
+
+  - id: storyweaver_dataset
+    name: "StoryWeaver"
+    category: documentation
+    url: https://github.com/Aria-Zhangjl/StoryWeaver
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Character-graph story model (trait/goal/emotion/relationship) reference for CharacterSeed schema."
+
+  - id: character_is_destiny
+    name: "Character is Destiny (LIFECHOICE)"
+    category: documentation
+    url: https://arxiv.org/abs/2404.12138
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Persona-driven decision consistency dataset (~1,400 decision points) for character-behavior modeling."
+
+  - id: kosbi_dataset
+    name: "KoSBi"
+    category: documentation
+    url: https://arxiv.org/abs/2305.17701
+    access: public_static
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Korean social-bias dataset used as a stereotype/bias check on generated characters (not generation)."
+
+  - id: breakdown_services
+    name: "Breakdown Services"
+    category: documentation
+    url: https://breakdownservices.com/
+    access: login_required
+    test_level: availability
+    expected_http_statuses: [200, 401, 403]
+    description: "US casting breakdowns ecosystem (Actors Access); LIKENESS_RISK, reference casting only."
+
+  # --- Story Material Intelligence (gap fill) ---
+
+  - id: naver_webtoon
+    name: "Naver Webtoon"
+    category: social_media
+    url: https://comic.naver.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Korean commercial webtoon ranking/genre for mainstream adaptation-target discovery."
+
+  - id: kakao_webtoon
+    name: "Kakao Webtoon"
+    category: documentation
+    url: https://webtoon.kakao.com/joinus
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Webnovel-to-webtoon proposal path signaling rights-ready IP (author holds secondary rights)."
+
+  - id: onestory
+    name: "OneStory"
+    category: commerce
+    url: https://onestory.co.kr/display/rank/webtoon
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Korean webtoon rankings surfacing inbound Chinese IP patterns; author/producer + rating."
+
+  # --- Content Update Intelligence (gap fill) ---
+
+  - id: mnet_plus
+    name: "Mnet Plus"
+    category: documentation
+    url: https://www.mnetplus.world/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "M Countdown / K-pop program content feed and Live for K-pop update discovery."
+
+  - id: tving
+    name: "TVING"
+    category: commerce
+    url: https://www.tving.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Korean OTT catalog of new/updated K-content (parallel to CJ Newsroom slate)."
+
+  - id: coupang_play_catalog
+    name: "Coupang Play Catalog"
+    category: commerce
+    url: https://www.coupangplay.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Coupang Play catalog exposing new/weekly-updated titles and series status."
+
+  - id: watcha_notices
+    name: "Watcha"
+    category: documentation
+    url: https://watcha.com/ko/notices
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Watcha exclusive-release notices for official OTT update verification."
+
+  - id: naver_entertainment
+    name: "Naver Entertainment"
+    category: social_media
+    url: https://entertain.naver.com/
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Korean drama/movie/music/celebrity feeds as mass-media attention signal."
+
+  - id: soompi_music
+    name: "Soompi Music"
+    category: documentation
+    url: https://www.soompi.com/category/music
+    access: public_javascript
+    test_level: availability
+    expected_http_statuses: [200]
+    description: "Cross-agency K-pop comeback/debut/MV/chart news aggregator (English global)."
