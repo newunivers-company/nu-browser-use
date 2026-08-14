@@ -21,8 +21,13 @@ outright and the description capped to a short identifying snippet: this indexes
 what is circulating, it does not reproduce it. `trends/statuses` is not called
 at all, since its payload is post bodies.
 
-Instances are configurable — any Mastodon server exposes the same API — so the
-default is the one in the catalogue.
+PERMISSION IS CHECKED PER INSTANCE
+The fediverse has no shared policy, and a survey of ten servers found three
+different stances: outright allow, a GPTBot-only block that does not reach a
+Claude-operated client, and servers that either reserve ai-train=no via
+Content-Signal or name anthropic-ai directly. So each instance's robots is read
+before it is collected, and the verdict and reason are written alongside the
+data. Adding a server to the list cannot silently add one that refuses us.
 
 Output (MASTODON_OUT, default ~/mastodon_export):
   snapshots/YYYY-MM-DD/<instance>.json
@@ -47,6 +52,9 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
 
 import aiohttp
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from promo_registry_verify import robots_verdict, scalar_verdict  # noqa: E402
+
 OUT_DIR = Path(os.environ.get('MASTODON_OUT', str(Path.home() / 'mastodon_export')))
 INSTANCES = [i for i in os.environ.get('MASTODON_INSTANCES', 'https://mastodon.social').split(',') if i]
 # Identifies the project rather than impersonating a browser: this is an
@@ -55,6 +63,9 @@ INSTANCES = [i for i in os.environ.get('MASTODON_INSTANCES', 'https://mastodon.s
 UA = 'nu-browser-use/1.0 (+https://newunivers.com; nu@newunivers.com)'
 HEADERS = {'User-Agent': UA, 'Accept': 'application/json'}
 LIMIT = 40
+# Agent names that mean us. A GPTBot-only block does not reach a Claude-operated
+# client; these do.
+CLAUDE_TOKENS = {'anthropic-ai', 'claudebot', 'claude-user', 'claude-searchbot'}
 SNIPPET = 200
 DELAY = 1.0
 TAG_RE = re.compile(r'<[^>]+>')
@@ -65,6 +76,34 @@ def snippet(value: object) -> str | None:
 		return None
 	cleaned = re.sub(r'\s+', ' ', TAG_RE.sub(' ', value)).strip()
 	return cleaned[:SNIPPET] or None
+
+
+async def permission(session: aiohttp.ClientSession, instance: str) -> tuple[bool, str, str]:
+	"""Decide per instance, because the fediverse has no shared policy.
+
+	Measured across ten servers: some allow outright, most name GPTBot alone
+	(which does not reach us), and some reserve ai-train=no or name anthropic-ai
+	directly. Hand-picking instances would mean re-checking by eye every time
+	the list grows, so the collector asks each server itself and records why.
+	"""
+	try:
+		async with session.get(f'{instance}/robots.txt', timeout=aiohttp.ClientTimeout(total=20)) as response:
+			body = await response.text(errors='replace') if response.status == 200 else ''
+	except Exception as exc:  # noqa: BLE001
+		return False, 'unreachable', type(exc).__name__
+	if not body:
+		# No robots published is no restriction, but say so rather than implying consent.
+		return True, 'no_robots', 'no robots.txt published'
+	verdict = robots_verdict(body, '/api/v1/trends/tags')
+	scalar = scalar_verdict(verdict)
+	if verdict['star'] == 'disallow':
+		return False, scalar, 'robots disallows * for this path'
+	if verdict.get('content_signal', {}).get('ai-train') == 'no':
+		return False, scalar, 'Content-Signal reserves ai-train=no'
+	named_us = sorted(set(verdict['ai_named']) & CLAUDE_TOKENS)
+	if named_us and verdict['ai_named_disallow']:
+		return False, scalar, f'names {", ".join(named_us)}'
+	return True, scalar, 'permitted'
 
 
 async def get(session: aiohttp.ClientSession, url: str) -> list | None:
@@ -162,9 +201,16 @@ async def main() -> None:
 
 	total_tags = total_links = 0
 	async with aiohttp.ClientSession(headers=HEADERS) as session:
+		gate: list[dict] = []
 		for instance in args.instances:
 			host = urlsplit(instance).netloc or instance
-			print(f'{host}')
+			allowed, verdict, reason = await permission(session, instance)
+			gate.append({'instance': host, 'allowed': allowed, 'verdict': verdict, 'reason': reason})
+			if not allowed:
+				print(f'{host}: SKIP ({verdict}) — {reason}')
+				await asyncio.sleep(DELAY)
+				continue
+			print(f'{host} [{verdict}]')
 			tags = await get(session, f'{instance}/api/v1/trends/tags?limit={args.limit}') or []
 			await asyncio.sleep(DELAY)
 			links = await get(session, f'{instance}/api/v1/trends/links?limit={args.limit}') or []
@@ -190,7 +236,16 @@ async def main() -> None:
 			for row in movers:
 				print(f"    {row['tag'][:28]:30} {row['uses']:>6} uses on {row['day']}")
 
-	print(f'\nDONE -> {OUT_DIR} (+{total_tags} tag-days, +{total_links} links)')
+	# The verdict is part of the record: a dataset that cannot say why a server
+	# was left out is indistinguishable from one that never asked.
+	(snap_dir / 'permission.json').write_text(
+		json.dumps({'checked_at': now, 'instances': gate}, ensure_ascii=False, indent=2), encoding='utf-8'
+	)
+	skipped = [row for row in gate if not row['allowed']]
+	print(f'\n{len(gate) - len(skipped)}/{len(gate)} instances permitted, {len(skipped)} skipped')
+	for row in skipped:
+		print(f'  skipped {row["instance"]}: {row["reason"]}')
+	print(f'DONE -> {OUT_DIR} (+{total_tags} tag-days, +{total_links} links)')
 
 
 if __name__ == '__main__':
