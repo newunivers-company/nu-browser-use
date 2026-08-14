@@ -150,12 +150,23 @@ def robots_verdict(text: str, path: str) -> dict:
 	"""
 	if '<html' in text[:200].lower() or '<!doctype' in text[:200].lower():
 		return {'star': 'unknown', 'ai_named': [], 'ai_named_disallow': False, 'content_signal': {}}
+	# Both parsers run and the more restrictive answer wins. stdlib is the
+	# better-tested implementation but it does not support wildcards inside a
+	# path: urllib.robotparser compares with startswith, so `Disallow: /api/*`
+	# never matches anything and is silently ignored. Measured on civitai.com,
+	# where it under-blocks /api/v1/images, /search/* and /questions/* — all
+	# plainly disallowed in the file. Delegating the verdict to it alone, as an
+	# earlier commit did, meant under-blocking wherever a site writes wildcards.
 	parser = RobotFileParser()
 	parser.parse(text.splitlines())
-	star = 'allow' if parser.can_fetch('*', path) else 'disallow'
+	stdlib_allows = parser.can_fetch('*', path)
+	groups = _parse_groups(text)
+	star_rules = next((rules for agents, rules in groups if '*' in agents), None)
+	walker_allows = _group_allows(star_rules, path) if star_rules is not None else True
+	star = 'allow' if (stdlib_allows and walker_allows) else 'disallow'
 	ai_named: list[str] = []
 	ai_disallow = False
-	for agents, rules in _parse_groups(text):
+	for agents, rules in groups:
 		named = sorted(agents & set(AI_UA_TOKENS))
 		if named:
 			ai_named.extend(named)
