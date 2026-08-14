@@ -684,8 +684,14 @@ channels:
     robots_verdict: unknown
     official_status: claimed
     consumer_or_b2b: b2b
-    collect: true
-    notes: public affiliate program terms — first-party statement of a competitor's UA economics
+    collect: false
+    notes: >-
+      The ranking plan called this P0 for competitor UA economics, but there is
+      nothing to read anonymously: it is a Vue SPA shell (id="app", no h1, no
+      headings) that stays empty after rendering, so the commission terms sit
+      behind affiliate login. Logging in is authentication and out of policy.
+      Recorded as reachable-but-empty rather than left as a silently blank
+      collectible row.
   - url: https://www.youtube.com/@FlexTV_English
     brand: flextv
     channel_type: youtube
@@ -815,11 +821,15 @@ channels:
   - url: https://www.shortdramaalliance.com/index
     company: short_drama_alliance
     channel_type: corporate
-    access_tier: T0
+    access_tier: T1
     robots_verdict: unknown
     official_status: claimed
     consumer_or_b2b: b2b
-    collect: true
+    collect: false
+    notes: >-
+      1.7KB SPA shell titled "BBS"; corpsite_watch read 0 headings and 0
+      internal paths, and rendering adds nothing. No industry content is served
+      to an anonymous visitor at this path.
   - url: https://www.linkedin.com/company/second-rodeo-productions
     company: second_rodeo
     channel_type: linkedin
