@@ -36,6 +36,11 @@ DEPTH (why each layer exists)
               never would.
   mirror      Piracy hosts rotate domains. The host that actually answered is
               recorded per run, so a dead watch is not mistaken for a clean one.
+  sections    The site runs four independent indexes — /webtoon, /manhwa,
+              /novel, /anime — each searchable and each verified separately.
+              Querying only /webtoon, as this did originally, made infringement
+              of our webnovel IP in /novel structurally invisible; that is a
+              blind spot no matcher tuning would ever have surfaced.
 
 Usage:
   python newtoki_watch.py --watchlist watchlist.txt
@@ -82,13 +87,22 @@ PAUSE_SECONDS = 30.0
 NEAR_THRESHOLD = 0.55  # bigram Jaccard above this is worth a human look
 CONTROL_QUERY = '사랑'
 NONSENSE_QUERY = 'zzzqqxnotitle'
+# The site carries four independent content sections, each with its own working
+# search index (controls measured 2026-08-14: 37/10/14/5 hits, 0 on nonsense).
+# The watch previously queried only /webtoon, so infringement of our webnovel
+# IP in /novel could not have been seen at all — a blind spot no amount of
+# matcher tuning would have surfaced.
+SECTIONS = [s for s in os.environ.get('NEWTOKI_SECTIONS', 'webtoon,manhwa,novel,anime').split(',') if s]
 
 JS_READ_RESULTS = r"""
 (() => {
+	const section = '__SECTION__';
 	const seen = new Set();
 	const out = [];
-	document.querySelectorAll('a[href*="/webtoon/"]').forEach(a => {
-		const m = (a.getAttribute('href') || '').match(/\/webtoon\/(\d+)$/);
+	document.querySelectorAll('a[href*="/' + section + '/"]').forEach(a => {
+		// Double-escaped on purpose: this is a JS *string* compiled to a regex,
+		// so a single backslash would be eaten by the string literal.
+		const m = (a.getAttribute('href') || '').match(new RegExp('/' + section + '/(\\d+)$'));
 		if (!m) return;
 		const text = (a.textContent || '').replace(/\s+/g, ' ').trim();
 		if (!text || seen.has(m[1])) return;
@@ -193,10 +207,23 @@ async def visit(session: BrowserSession, url: str, expression: str) -> str | Non
 	return await evaluate(session, expression)
 
 
-async def search(session: BrowserSession, host: str, query: str) -> list[dict]:
-	"""One search. Navigation follows the site's /webtoon/__q/<base64> redirect."""
-	raw = await visit(session, f'{host}/webtoon?stx={quote(query)}', JS_READ_RESULTS)
+async def search(session: BrowserSession, host: str, query: str, section: str = 'webtoon') -> list[dict]:
+	"""One search in one section. Navigation follows the site's __q/<base64> redirect."""
+	raw = await visit(session, f'{host}/{section}?stx={quote(query)}', JS_READ_RESULTS.replace('__SECTION__', section))
 	return json.loads(raw) if raw else []
+
+
+async def search_all(session: BrowserSession, host: str, query: str, sections: list[str]) -> list[dict]:
+	"""Same query across every section; results tagged with where they came from."""
+	found: list[dict] = []
+	for section in sections:
+		try:
+			for row in await search(session, host, query, section):
+				found.append({**row, 'section': section})
+		except Exception as exc:  # noqa: BLE001
+			print(f'  section {section}: query failed ({type(exc).__name__})')
+		await asyncio.sleep(1.2)
+	return found
 
 
 async def pick_host(session: BrowserSession) -> tuple[str | None, list[dict]]:
@@ -214,16 +241,29 @@ async def pick_host(session: BrowserSession) -> tuple[str | None, list[dict]]:
 	return None, tried
 
 
-async def check_detector(session: BrowserSession, host: str) -> dict:
-	"""Prove the search path works before trusting any zero."""
-	control = await search(session, host, CONTROL_QUERY)
-	await asyncio.sleep(2.0)
-	nonsense = await search(session, host, NONSENSE_QUERY)
-	verified = len(control) > 0 and len(nonsense) == 0
+async def check_detector(session: BrowserSession, host: str, sections: list[str]) -> dict:
+	"""Prove the search path works in EVERY section before trusting any zero.
+
+	Verified per section, not once overall: a section whose index is down would
+	otherwise hide behind a healthy sibling and contribute a silent zero.
+	"""
+	per_section: dict[str, dict] = {}
+	for section in sections:
+		control = await search(session, host, CONTROL_QUERY, section)
+		await asyncio.sleep(1.5)
+		nonsense = await search(session, host, NONSENSE_QUERY, section)
+		per_section[section] = {
+			'control_hits': len(control), 'nonsense_hits': len(nonsense),
+			'status': 'verified' if control and not nonsense else 'unverified',
+		}
+		await asyncio.sleep(1.5)
+	verified = [s for s, v in per_section.items() if v['status'] == 'verified']
 	return {
-		'detector_status': 'verified' if verified else 'unverified',
-		'control_query': CONTROL_QUERY, 'control_hits': len(control),
-		'nonsense_query': NONSENSE_QUERY, 'nonsense_hits': len(nonsense),
+		'detector_status': 'verified' if len(verified) == len(sections) else ('partial' if verified else 'unverified'),
+		'control_query': CONTROL_QUERY, 'nonsense_query': NONSENSE_QUERY,
+		'sections': per_section, 'sections_verified': verified,
+		'control_hits': sum(v['control_hits'] for v in per_section.values()),
+		'nonsense_hits': sum(v['nonsense_hits'] for v in per_section.values()),
 	}
 
 
@@ -295,18 +335,20 @@ async def main() -> None:
 				print('  NO LIVE MIRROR — this run makes no claim about infringement')
 			else:
 				print(f'[control] verifying the detector on {host}')
-				detector = await check_detector(session, host)
-				print(f'  control "{detector["control_query"]}" -> {detector["control_hits"]} hits; nonsense -> {detector["nonsense_hits"]} hits')
-				print(f'  detector: {detector["detector_status"].upper()}')
-				if detector['detector_status'] == 'unverified':
-					print('  WARNING: a zero this run means no observation, not no infringement')
+				detector = await check_detector(session, host, SECTIONS)
+				for section, stats in detector['sections'].items():
+					print(f'  /{section:9} control={stats["control_hits"]:<4} nonsense={stats["nonsense_hits"]:<3} {stats["status"]}')
+				print(f'  detector: {detector["detector_status"].upper()} ({len(detector["sections_verified"])}/{len(SECTIONS)} sections)')
+				if detector['detector_status'] != 'verified':
+					blind = [s for s in SECTIONS if s not in detector['sections_verified']]
+					print(f'  WARNING: no observation for {", ".join(blind) or "any section"} — a zero there means nothing')
 
 			if args.self_test and host:
 				# The evidence layer needs proving too. A sighting whose fields
 				# silently come back empty is the same unverified-zero problem
 				# one level down, so self-test exercises it on a control result
 				# and reports which fields populated — counts only.
-				control = await search(session, host, CONTROL_QUERY)
+				control = await search(session, host, CONTROL_QUERY, SECTIONS[0])
 				if control:
 					evidence = await collect_evidence(session, control[0]['url'])
 					populated = sorted(k for k, v in evidence.items() if v not in (None, [], '', 0) and k != 'url')
@@ -328,15 +370,16 @@ async def main() -> None:
 				scanned = 0
 				for query in work['queries']:
 					try:
-						results = await search(session, host, query)
+						results = await search_all(session, host, query, SECTIONS)
 					except Exception as exc:  # noqa: BLE001
 						print(f'  query {query!r} failed: {type(exc).__name__}')
 						continue
 					scanned += len(results)
 					for result in results:
-						if result['id'] in seen_ids:
+						key = f'{result["section"]}:{result["id"]}'
+						if key in seen_ids:
 							continue
-						seen_ids.add(result['id'])
+						seen_ids.add(key)
 						# Compare against every alias, keep the strongest verdict.
 						best_kind, best_score = 'none', 0.0
 						for alias in work['queries']:
@@ -353,9 +396,10 @@ async def main() -> None:
 
 				for hit in exact + near:
 					evidence = await collect_evidence(session, hit['url'])
-					entry = update_recurrence(recurrence, work['title'], hit['id'], today)
+					entry = update_recurrence(recurrence, work['title'], f'{hit["section"]}:{hit["id"]}', today)
 					sightings.append({
 						'our_title': work['title'], 'matched_title': hit['title'], 'series_id': hit['id'],
+						'section': hit['section'],
 						'url': hit['url'], 'match': 'exact' if hit in exact else 'near',
 						'score': hit['score'], 'via_query': hit['via_query'],
 						'host': host, 'detector_status': detector['detector_status'],
@@ -370,7 +414,9 @@ async def main() -> None:
 					await asyncio.sleep(1.5)
 
 				per_work.append({'title': work['title'], 'aliases': work['aliases'], 'results_scanned': scanned, 'exact': len(exact), 'near': len(near)})
-				print(f'[{index}/{len(works)}] "{work["title"]}" ({len(work["queries"])} queries): exact={len(exact)} near={len(near)} scanned={scanned}')
+				sections_hit = sorted({h['section'] for h in exact + near})
+				where = f' in {",".join(sections_hit)}' if sections_hit else ''
+				print(f'[{index}/{len(works)}] "{work["title"]}" ({len(work["queries"])} queries x {len(SECTIONS)} sections): exact={len(exact)} near={len(near)} scanned={scanned}{where}')
 		finally:
 			await session.kill()
 
