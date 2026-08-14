@@ -252,7 +252,17 @@ channels:
     official_evidence: appstore_description
     consumer_or_b2b: consumer
     collect: true
-    notes: found by appstore_watch discovery, not present in the source research doc
+    notes: >-
+      Found by appstore_watch discovery; not in the source research doc, and a
+      different property from dramabox.com — this is the SEO satellite and it is
+      far more forthcoming. Each title page ships a Next.js payload with
+      viewCount, followCount, chapterCount, genre, shelf date, per-episode
+      durations and a recommendation rail. No sitemap (404 on every variant), so
+      dramaboxdb_collect.py seeds from genre listings and expands along the
+      recommendation rails. robots allows /; /search?* is disallowed and unused.
+      NOT COLLECTED: chapterList also carries signed CloudFront mp4/m3u8 URLs —
+      direct handles to episode video — which are stripped and never written,
+      per the standing ban on collecting episode content.
 
   # --- Vigloo / SpoonLabs ---------------------------------------------------
   - url: https://www.vigloo.com/
