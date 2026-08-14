@@ -57,6 +57,13 @@ CONCURRENCY = 6
 # Markers that mean "200 OK but you are looking at a wall, not content".
 WALL_MARKERS = (('authwall', 'authwall'), ('loginPage', 'login_shell'), ('Join now', 'linkedin_join'))
 # UA tokens that identify an AI-crawler group in robots.txt.
+# Content-Signal (robots extension, cited by publishers as an Article 4 DSM
+# reservation) states permitted USES rather than permitted agents:
+#   search=yes, ai-train=no, use=reference
+# It is how sites now express "index me, do not train on me", and it appears in
+# the `User-agent: *` group, so it binds a generic client that no named-agent
+# rule touches. Seen on linktr.ee, anilist.co and whc.unesco.org.
+CONTENT_SIGNAL_RE = re.compile(r'(?im)^\s*content-signal:\s*(.+)$')
 AI_UA_TOKENS = ('anthropic-ai', 'claudebot', 'claude-user', 'claude-searchbot', 'gptbot', 'oai-searchbot', 'chatgpt-user', 'perplexitybot', 'google-extended', 'ccbot', 'bytespider', 'meta-externalagent', 'applebot-extended')
 
 
@@ -106,6 +113,23 @@ def _group_allows(rules: list[tuple[bool, str]], path: str) -> bool:
 	return best_allow
 
 
+def content_signals(text: str) -> dict[str, str]:
+	"""Parse Content-Signal directives into {use: yes|no}.
+
+	Only the first declaration is taken: sites publish one per agent group and
+	the `*` group leads, which is the group that binds us.
+	"""
+	match = CONTENT_SIGNAL_RE.search(text)
+	if not match:
+		return {}
+	signals: dict[str, str] = {}
+	for part in match.group(1).split(','):
+		if '=' in part:
+			key, _, value = part.partition('=')
+			signals[key.strip().lower()] = value.strip().lower()
+	return signals
+
+
 def robots_verdict(text: str, path: str) -> dict:
 	"""Evaluate robots.txt for this path, separating two distinct questions.
 
@@ -125,7 +149,7 @@ def robots_verdict(text: str, path: str) -> dict:
 	barrier and hides the policy question.
 	"""
 	if '<html' in text[:200].lower() or '<!doctype' in text[:200].lower():
-		return {'star': 'unknown', 'ai_named': [], 'ai_named_disallow': False}
+		return {'star': 'unknown', 'ai_named': [], 'ai_named_disallow': False, 'content_signal': {}}
 	parser = RobotFileParser()
 	parser.parse(text.splitlines())
 	star = 'allow' if parser.can_fetch('*', path) else 'disallow'
@@ -137,7 +161,12 @@ def robots_verdict(text: str, path: str) -> dict:
 			ai_named.extend(named)
 			if not _group_allows(rules, path):
 				ai_disallow = True
-	return {'star': star, 'ai_named': sorted(set(ai_named)), 'ai_named_disallow': ai_disallow}
+	return {
+		'star': star,
+		'ai_named': sorted(set(ai_named)),
+		'ai_named_disallow': ai_disallow,
+		'content_signal': content_signals(text),
+	}
 
 
 def scalar_verdict(robots: dict) -> str:
@@ -146,6 +175,9 @@ def scalar_verdict(robots: dict) -> str:
 		return 'unknown'
 	if robots['star'] == 'disallow':
 		return 'disallow'
+	# A stated reservation binds us even when no agent name matches ours.
+	if robots.get('content_signal', {}).get('ai-train') == 'no':
+		return 'ai_train_reserved'
 	if robots['ai_named_disallow']:
 		return 'named_ai_block'
 	return 'allow'
