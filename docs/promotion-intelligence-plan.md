@@ -229,7 +229,16 @@ Googlebot/Bingbot/Yandex/Yeti를 화이트리스트로 허용한 뒤 `python-req
 |---|---|---|
 | GoodShort | **461** | viewCount, likeCount, followCount, commentCount, inLibraryNum, ratings, chapterCount + 장르/트로프 461/461 |
 | ShortMax | **76** | plays, likes, 화수, 카테고리, 시놉시스 + 추천 엣지 **1,125** |
-| FlexTV | 진행 | views, likes, 장르(발견 경로 기준) |
+| FlexTV | **115** | views, likes, 시놉시스, 커버 (**장르 없음** — 아래 참조) |
+
+통합 `observations.jsonl` **652행**, 세 소스 모두 필수 필드 누락 0, `rank_type=VIEW_COUNT`로
+기존 `RankingObservation` 스키마와 정합.
+
+**FlexTV 장르는 수집하지 않는다.** 처음엔 "발견된 장르 페이지"를 장르로 귀속했는데
+검증해보니 틀렸다 — 장르 페이지 6개가 **전부 동일한 27개 작품**을 반환한다(첫 페이지 +10,
+이후 +0×5). 즉 그 앵커들은 장르 필터 결과가 아니라 공용 레일이다. 실제 장르 그리드는
+`/dramas/all-dramas`와 같은 앵커 없는 JS 카드고, 재생 페이지엔 breadcrumb도 없다.
+그래서 **추측 대신 필드를 비웠고**, 매 실행 말미에 미수집 사유를 출력한다.
 
 **GoodShort의 트로프 어휘**가 특히 값지다 — Counterattack 112, CEO 109, Sweet 106,
 Underdog Rise 84, Strong Female Lead 81… 461/461 커버리지에 **viewCount가 붙어 있어서**

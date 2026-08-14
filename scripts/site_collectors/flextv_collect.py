@@ -26,6 +26,9 @@ deferred rather than silently truncated — see the coverage note this prints.
 Per title the play page publishes `.video-op-btn__label` counters (likes,
 views, and an episode/share figure in DOM order) plus title and cover.
 
+Genre is deliberately absent — see discover() for why attributing it from the
+listing page is provably wrong on this site.
+
 Output (FLEXTV_OUT, default ~/flextv_export):
   dramas.json / dramas.csv
   snapshots/YYYY-MM-DD/dramas.json
@@ -139,16 +142,19 @@ def episode_links(href_dump: str) -> dict[str, str]:
 	return found
 
 
-async def discover(session: BrowserSession, genre_pages: int) -> tuple[dict[str, str], dict[str, list[str]]]:
-	"""Return ({drama_id: episode-1 path}, {drama_id: [genre, ...]}).
+async def discover(session: BrowserSession, genre_pages: int) -> dict[str, str]:
+	"""Return {drama_id: episode-1 path} from home plus genre pages.
 
-	Genre comes from which listing a title was found on, not from the play page
-	— play pages render no breadcrumb, and a title legitimately appears under
-	several genres, which a single breadcrumb could not express anyway.
+	Genre is NOT recorded. Attributing it from the listing a title was found on
+	was tried and is provably wrong here: every genre page yields the identical
+	set of anchor-linked titles (first page +10, then +0, +0, +0, +0, +0), so
+	those anchors are a shared rail rather than genre-filtered results. The real
+	genre grid is anchor-less JS cards, the same wall as /dramas/all-dramas.
+	Play pages render no breadcrumb either, so FlexTV genre is currently not
+	obtainable and the field is omitted rather than guessed.
 	"""
 	home = await visit(session, BASE + '/', JS_LINKS, scrolls=3) or ''
 	found = episode_links(home)
-	genres_by_id: dict[str, list[str]] = {}
 	print(f'  home: {len(found)} titles')
 
 	for genre in sorted(set(GENRE_RE.findall(home)))[:genre_pages]:
@@ -161,12 +167,11 @@ async def discover(session: BrowserSession, genre_pages: int) -> tuple[dict[str,
 		before = len(found)
 		for drama_id, path in episode_links(page).items():
 			found.setdefault(drama_id, path)
-			genres_by_id.setdefault(drama_id, []).append(label)
 		print(f'  genres/{label}: +{len(found) - before} (total {len(found)})')
-	return found, genres_by_id
+	return found
 
 
-def parse_detail(payload: dict, drama_id: str, path: str, genres: list[str]) -> dict:
+def parse_detail(payload: dict, drama_id: str, path: str) -> dict:
 	"""Map the play page onto flat fields.
 
 	`.video-op-btn__label` renders as [likes, views, episodes] in DOM order.
@@ -181,7 +186,6 @@ def parse_detail(payload: dict, drama_id: str, path: str, genres: list[str]) -> 
 		'drama_id': drama_id,
 		'title': re.sub(r'^Watch\s+|\s+Episode\s+\d+.*$', '', unquote(title)).strip() or None,
 		'url': payload.get('url') or f'{BASE}{path}',
-		'genres': ' | '.join(dict.fromkeys(genres)),
 		'likes': likes,
 		'likes_is_approx': likes_approx,
 		'views': views,
@@ -212,7 +216,7 @@ def write_outputs(rows: list[dict], now: str) -> None:
 						'scope': {'type': 'platform', 'platform': 'flextv'}, 'period': {'type': 'cumulative'},
 						'rank': None, 'raw_metric_name': 'views', 'raw_score': row['views'], 'views': row['views'],
 						'is_approximate': row['views_is_approx'], 'likes': row['likes'],
-						'platform': 'FlexTV', 'genres': [g for g in row['genres'].split(' | ') if g],
+						'platform': 'FlexTV',
 						'source_url': row['url'], 'observed_at': now,
 					},
 					ensure_ascii=False,
@@ -220,7 +224,7 @@ def write_outputs(rows: list[dict], now: str) -> None:
 				+ '\n'
 			)
 
-	columns = ['drama_id', 'title', 'genres', 'views', 'likes', 'views_is_approx', 'likes_is_approx', 'labels_raw', 'url', 'cover', 'synopsis']
+	columns = ['drama_id', 'title', 'views', 'likes', 'views_is_approx', 'likes_is_approx', 'labels_raw', 'url', 'cover', 'synopsis']
 	with (OUT_DIR / 'dramas.csv').open('w', newline='', encoding='utf-8-sig') as handle:
 		writer = csv.DictWriter(handle, fieldnames=columns, extrasaction='ignore')
 		writer.writeheader()
@@ -250,7 +254,7 @@ async def main() -> None:
 		try:
 			await session.start()
 			print('[1/2] discovering titles')
-			found, genres_by_id = await discover(session, args.genres)
+			found = await discover(session, args.genres)
 			items = sorted(found.items())
 			if args.limit:
 				items = items[: args.limit]
@@ -266,7 +270,7 @@ async def main() -> None:
 					continue
 				if not payload:
 					continue
-				row = parse_detail(payload, drama_id, path, genres_by_id.get(drama_id, []))
+				row = parse_detail(payload, drama_id, path)
 				rows.append(row)
 				if index % 10 == 0 or index == len(items):
 					print(f'  [{index}/{len(items)}] {row["title"]}: views={row["views"]} likes={row["likes"]}')
@@ -277,7 +281,8 @@ async def main() -> None:
 	with_views = [row for row in rows if row.get('views')]
 	print(f'DONE -> {OUT_DIR}')
 	print(f'  titles: {len(rows)} | with views: {len(with_views)}')
-	print('  COVERAGE: home + genre pages only; /dramas/all-dramas paginates via JS click handlers and is not enumerated')
+	print('  COVERAGE: home + genre pages only; /dramas/all-dramas and the genre grids are anchor-less JS cards')
+	print('  NOT COLLECTED: genre — every genre page returns the same shared rail, so listing-based attribution is invalid')
 	for row in sorted(with_views, key=lambda r: r['views'], reverse=True)[:5]:
 		print(f'    {row["views"]:>12,}  {str(row["title"])[:50]}')
 

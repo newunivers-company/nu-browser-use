@@ -643,8 +643,11 @@ channels:
       can_fetch('*') is True) but the intent is unmistakable, and the server
       agrees — default aiohttp gets `400 Too many headers received` while a
       browser is served. Line drawn is library-vs-browser, so flextv_collect.py
-      renders. COVERAGE GAP: /dramas/all-dramas has anchor-less JS cards, so
-      enumeration is home + genre pages only.
+      renders. 115 titles with views/likes. COVERAGE GAPS: /dramas/all-dramas
+      and the genre grids are anchor-less JS cards, so enumeration is home plus
+      genre-page rails only; and genre is NOT collected, because every genre
+      page returns the same shared rail (+10 then +0 x5), making listing-based
+      attribution provably wrong.
   # Footer links off flextv.cc, read by promo_browser_collect.
   - url: https://www.instagram.com/flextv_official_us
     brand: flextv
