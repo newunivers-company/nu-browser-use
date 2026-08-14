@@ -24,6 +24,8 @@
 - **에피소드 영상 원문** — HLS 스트림 세그먼트, 다운로드 파일 전부. 상업 콘텐츠 전체 복제는 원칙 1 위반이자 저작권 침해.
 - **접근통제 우회** — 앱 전용 API 역설계, 재생 토큰 위조, 서명 체인을 보호장치 해제 목적으로 사용. (ReelShort 서명 재현은 웹이 익명 방문자에게 주는 카탈로그 읽기에 한해서만 사용한다.)
 - **AI봇 명시 차단 소스 직접 스크래핑** — PromptHero, SimplyScripts, TV Tropes 등 ToS 리스크 명시 소스.
+- **authwall 뒤 소셜 채널** — LinkedIn/TikTok/Instagram/Facebook/Linktree. robots가 자동화를 문장으로 금지하거나(LinkedIn·Facebook), `User-agent: *`에 `Disallow: /`이거나(Linktree), AI 크롤러를 지목 차단한다(TikTok). 채널의 **존재와 소유관계는 레지스트리에 기록하되 요청하지 않는다** — `promotion_channels.yaml`의 `access_tier: T2` + `collect: false`.
+- **봇 방어 우회** — WAF 챌린지(예: col.com Alibaba Tengine 405), 레이트리밋 회피, UA 위장. 정상 브라우저 헤더(Accept 등) 전송은 우회가 아니라 정직한 클라이언트 동작이며, User-Agent는 계속 우리를 밝힌다.
 
 ## 영상 데이터가 필요할 때의 합법 경로
 
@@ -40,8 +42,28 @@
 | ReelShort | ✅ 수집 완료 | 순수 HTTP: 웹 클라이언트 서명 재현 (카탈로그 한정) |
 | DramaBox | ⬜ 미탐색 | 진입점 확인 필요 (sitemap 404) |
 | netshort | ⬜ 진입점 404 | 재탐색 필요 |
-| dramawave.tech | ❌ 사망 | DNS 실패 |
+| App Store Lookup | ✅ 수집 완료 | Apple 공식 무키 JSON — 앱 14개 × 3개 스토어프론트 |
+| 홍보채널 레지스트리 | ✅ 검증 완료 | 채널 65개 tier 분류, T0 20개만 수집 |
+| dramawave.tech | ⚠️ 정정 | 이전 "DNS 실패" 기재는 오류 — 200이나 2.8KB 셸 |
 | MicroDrama Radar | ❌ 차단 | Vercel 429 |
+
+## 접근 등급 (access_tier)
+
+홍보채널처럼 "가치는 높은데 수집은 불가"가 섞인 소스군은 등급을 붙여 관리한다.
+정의와 채널별 판정은 `scripts/site_collectors/registry/promotion_channels.yaml`,
+근거는 `docs/promotion-intelligence-plan.md`.
+
+- **T0** 무인증 HTTP + robots 클린 + 구조화 데이터 → 수집
+- **T1** 도달은 되나 JS 렌더 → CDP 필요
+- **T2** authwall 또는 robots 금지 → **등록만, 요청 안 함**
+
+T2를 목록에서 지우지 않는 이유: 채널 소유관계는 그 자체로 인텔리전스이고, 정책·제휴
+상황이 바뀌면 그대로 활성화된다. 금지는 문서상 약속이 아니라 `promo_registry_verify.py`가
+기계적으로 강제한다(`collect: false`인 URL은 아예 요청하지 않음).
+
+robots 판정은 **두 질문을 분리**한다 — `star`(일반 크롤러 규칙, 우리를 구속)와
+`ai_named_disallow`(호스트가 AI 크롤러를 지목 차단했는가). 전자만 허용이고 후자가 참인
+경우는 자동 판정하지 않고 `decision_pending: true`로 사람 판단까지 잠근다.
 
 ## 스냅샷·증분 운영
 
