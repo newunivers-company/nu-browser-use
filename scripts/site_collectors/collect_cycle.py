@@ -58,6 +58,9 @@ DAILY: list[tuple[str, list[str], int]] = [
 	('mastodon', [str(HERE / 'mastodon_trends.py')], 15),
 	('lemmy', [str(HERE / 'lemmy_communities.py')], 20),
 	('bluesky', [str(HERE / 'bsky_trend_collect.py')], 15),
+	# Downloads are a monotonic counter, so the daily delta is the adoption
+	# signal — the same shape as app-store rating counts.
+	('huggingface', [str(HERE / 'huggingface_hub_collect.py')], 25),
 	('goodshort', [str(HERE / 'goodshort_collect.py'), '--pages', '220'], 45),
 	('dramaboxdb', [str(HERE / 'dramaboxdb_collect.py'), '--expand', '3', '--max-titles', '2500'], 45),
 	('mydrama', [str(HERE / 'mydrama_collect.py')], 20),
