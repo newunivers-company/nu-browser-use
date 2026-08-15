@@ -125,8 +125,11 @@ async def dossier(session: aiohttp.ClientSession, source, semaphore: asyncio.Sem
 	url = str(source.url)
 	parts = urlsplit(url)
 	row: dict = {
-		'id': source.id, 'category': source.category.value, 'access': source.access.value,
-		'url': url, 'host': parts.netloc,
+		'id': source.id,
+		'category': source.category.value,
+		'access': source.access.value,
+		'url': url,
+		'host': parts.netloc,
 	}
 	async with semaphore:
 		robots_status, robots_body = await get(session, f'{parts.scheme}://{parts.netloc}/robots.txt')
@@ -206,9 +209,26 @@ async def main() -> None:
 
 	OUT_DIR.mkdir(parents=True, exist_ok=True)
 	now = dt.datetime.now(dt.timezone.utc).isoformat()
-	(OUT_DIR / 'dossiers.json').write_text(json.dumps({'built_at': now, 'sources': rows}, ensure_ascii=False, indent=2), encoding='utf-8')
+	(OUT_DIR / 'dossiers.json').write_text(
+		json.dumps({'built_at': now, 'sources': rows}, ensure_ascii=False, indent=2), encoding='utf-8'
+	)
 
-	columns = ['id', 'category', 'access', 'channel', 'robots', 'status', 'sitemap', 'og_count', 'feeds', 'ld_types', 'next_data', 'nuxt_data', 'title', 'url']
+	columns = [
+		'id',
+		'category',
+		'access',
+		'channel',
+		'robots',
+		'status',
+		'sitemap',
+		'og_count',
+		'feeds',
+		'ld_types',
+		'next_data',
+		'nuxt_data',
+		'title',
+		'url',
+	]
 	with (OUT_DIR / 'dossiers.csv').open('w', newline='', encoding='utf-8-sig') as handle:
 		writer = csv.writer(handle)
 		writer.writerow(columns)
@@ -220,7 +240,17 @@ async def main() -> None:
 		writer = csv.writer(handle)
 		writer.writerow(['id', 'category', 'channel', 'robots', 'feeds', 'ld_types', 'url'])
 		for row in sorted(strong, key=lambda r: (r['channel'], r['id'])):
-			writer.writerow([row['id'], row['category'], row['channel'], row['robots'], ' | '.join(row.get('feeds') or []), ' | '.join(row.get('ld_types') or []), row['url']])
+			writer.writerow(
+				[
+					row['id'],
+					row['category'],
+					row['channel'],
+					row['robots'],
+					' | '.join(row.get('feeds') or []),
+					' | '.join(row.get('ld_types') or []),
+					row['url'],
+				]
+			)
 
 	tally: dict[str, int] = {}
 	for row in rows:
@@ -230,7 +260,13 @@ async def main() -> None:
 		print(f'  {name:18} {count}')
 	ai_named = [r for r in rows if r.get('robots_ai_named')]
 	if ai_named:
-		print(f'\n{len(ai_named)} sources name AI crawlers in robots (human ruling needed before collecting):')
+		# "Names" is not "blocks": news.coupang.com names ClaudeBot in order to
+		# write `Allow: /`. The verdict column beside each row is what decides
+		# collection, and docs/collection-policy.md has already ruled on it. The
+		# earlier wording here — "human ruling needed" — described a settled
+		# question as an open one and kept it on the open list for days.
+		restricted = sum(1 for r in ai_named if r.get('robots') in ('named_ai_block', 'disallow', 'ai_train_reserved'))
+		print(f'\n{len(ai_named)} sources name AI crawlers in robots; {restricted} of them actually restrict us:')
 		for row in ai_named[:15]:
 			print(f'  {row["id"]:24} {row["robots"]:16} {", ".join(row["robots_ai_named"][:4])}')
 	print(f'\n{len(strong)} sources offer a real machine-readable channel -> {OUT_DIR / "collectable.csv"}')
