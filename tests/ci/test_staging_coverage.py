@@ -98,7 +98,7 @@ def test_excluded_dirs_are_not_also_matched_by_the_script():
 	assert leaked == [], f'EXCLUDED dirs that stage_to_nas.sh would still upload: {leaked}'
 
 
-@pytest.mark.parametrize('name', ['catalog_posters', 'source_review', 'trope_rank'])
+@pytest.mark.parametrize('name', ['catalog_posters', 'source_review', 'trope_rank', 'browser_catalog_export'])
 def test_suffixless_output_dirs_are_covered(name):
 	"""Regression: the dirs the *_export rewrite dropped on the floor."""
 	assert matches_staging(name, staging_patterns()), f'{name} is not matched by stage_to_nas.sh'

@@ -67,6 +67,14 @@ DAILY: list[tuple[str, list[str], int]] = [
 	('mydrama', [str(HERE / 'mydrama_collect.py')], 20),
 	('reelshort', [str(HERE / 'reelshort_collect.py'), '--no-posters'], 30),
 	('netshort', [str(HERE / 'netshort_collect.py')], 20),
+	# Daily despite costing two Chromium launches, unlike the other browser steps
+	# which sit in the weekly cadence. These are ordered ranking boards and the
+	# cards state their own movement ("上升6名" — up six places), so the thing
+	# being measured demonstrably turns over daily. Sampling weekly would record
+	# the ordinal and lose the velocity, which is the only reason to collect a
+	# rank at all. Contrast dramabox_rails, moved the other way for the opposite
+	# reason: its numbers are fixed at build time.
+	('browser_boards', [str(HERE / 'browser_catalog_collect.py')], 35),
 ]
 
 WEEKLY: list[tuple[str, list[str], int]] = [
@@ -114,9 +122,12 @@ WEEKLY: list[tuple[str, list[str], int]] = [
 #   blocked on input        newtoki_watch — needs the rights-holder watchlist;
 #                           add it here the day that lands
 #   recon, not collection   promo_recon, newtoki_calibrate, login_source_probe,
-#                           promo_browser_collect, browser_upgrade_review — run
-#                           by hand when a source's shape, or what to build
-#                           next, is in question
+#                           promo_browser_collect, browser_upgrade_review,
+#                           browser_render_probe — run by hand when a source's
+#                           shape, or what to build next, is in question. The
+#                           render probe in particular launches one Chromium per
+#                           source and answers a question that only changes when
+#                           a site is rebuilt.
 #   one-shot asset pulls    vigloo_assets, vigloo_episode_thumbs — posters and
 #                           episode stills are fetched once and cached; re-running
 #                           re-downloads images for no new signal
@@ -144,6 +155,7 @@ UNSCHEDULED_BY_DESIGN = {
 	'promo_browser_collect.py',
 	'munpia_collect.py',
 	'browser_upgrade_review.py',
+	'browser_render_probe.py',
 	'comfy_workflow_collect.py',
 	'fal_collect.py',
 	'vigloo_assets.py',
