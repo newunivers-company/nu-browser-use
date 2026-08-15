@@ -79,8 +79,16 @@ fi
 echo "NAS root: $NAS_ROOT"
 [ "$DRY_RUN" = "1" ] && echo "(dry run)"
 
+# Per-directory stamps live locally: deciding whether to write to the NAS must
+# never itself require reading the NAS.
+STATE_DIR="${STAGE_STATE_DIR:-$HOME_ROOT/.stage_state}"
+FORCE="${FORCE:-0}"
+mkdir -p "$STATE_DIR"
+
 staged=0
 skipped=0
+unchanged=0
+failed=0
 for name in "${candidates[@]}"; do
 	if [ ${#only[@]} -gt 0 ]; then
 		match=0
@@ -96,6 +104,18 @@ for name in "${candidates[@]}"; do
 	src="$HOME_ROOT/$name"
 	dst="$NAS_ROOT/$name"
 	src_files=$(find "$src" -type f 2>/dev/null | wc -l)
+	stamp="$STATE_DIR/$name.stamp"
+
+	# Skip a directory nothing has written to since it was last staged. The test
+	# is local-only, so an unchanged tree costs no network I/O whatsoever — the
+	# difference between touching ~270k files over SMB nightly and touching the
+	# handful the cadence actually wrote.
+	if [ "$FORCE" != "1" ] && [ -f "$stamp" ] && [ -z "$(find "$src" -newer "$stamp" -print -quit 2>/dev/null)" ]; then
+		printf 'UNCHANGED %-22s %s files\n' "$name" "$src_files"
+		unchanged=$((unchanged + 1))
+		continue
+	fi
+
 	if [ "$DRY_RUN" = "1" ]; then
 		printf 'WOULD STAGE %-22s %s files -> %s\n' "$name" "$src_files" "$dst"
 		staged=$((staged + 1))
@@ -104,15 +124,45 @@ for name in "${candidates[@]}"; do
 
 	mkdir -p "$dst"
 	# Incremental, and nothing on the NAS side is ever deleted.
-	if command -v rsync >/dev/null 2>&1; then
-		rsync -a --times "$src/" "$dst/"
-	else
-		cp -ru "$src/." "$dst/"
+	#
+	# The destination is deliberately no longer counted or sized. `find "$dst" |
+	# wc -l` plus `du -sh "$dst"` walked the entire remote tree once per
+	# directory — 208k files for shotdeck alone — purely to print a number. On
+	# 2026-08-15 a staging run under Task Scheduler died with 0x8007006B
+	# (ERROR_SEM_TIMEOUT) while another session wrote to the same share, and
+	# three background runs died the same way. rsync already reports what it
+	# moved, and that number costs nothing.
+	# rsync is not installed in this Git Bash, so `cp` is the path that actually
+	# runs — worth stating, because the rsync branch reads like the default and
+	# has never once executed here. `-p` preserves timestamps: without it every
+	# copy stamped the destination with the copy time, which is why NAS files
+	# kept looking newer than the local originals they came from.
+	moved='n/a (cp)'
+	rc=1
+	for attempt in 1 2; do
+		if command -v rsync >/dev/null 2>&1; then
+			moved=$(rsync -a --times --out-format='%n' "$src/" "$dst/" 2>/dev/null | wc -l)
+			rc=${PIPESTATUS[0]}
+		else
+			cp -rup "$src/." "$dst/"
+			rc=$?
+		fi
+		[ "$rc" -eq 0 ] && break
+		printf 'RETRY %-22s attempt %s failed (rc=%s)\n' "$name" "$attempt" "$rc"
+		sleep 5
+	done
+
+	if [ "$rc" -ne 0 ]; then
+		# A flaky share should cost one directory, not the remainder of the run.
+		printf 'FAILED %-22s rc=%s\n' "$name" "$rc"
+		failed=$((failed + 1))
+		continue
 	fi
-	dst_files=$(find "$dst" -type f 2>/dev/null | wc -l)
-	size=$(du -sh "$dst" 2>/dev/null | cut -f1)
-	printf 'STAGED %-22s %s -> %s files, %s\n' "$name" "$src_files" "$dst_files" "$size"
+	touch "$stamp"
+	printf 'STAGED %-22s %s local files, %s transferred\n' "$name" "$src_files" "$moved"
 	staged=$((staged + 1))
 done
 
-echo "done: $staged staged, $skipped filtered out"
+echo "done: $staged staged, $unchanged unchanged, $failed failed, $skipped filtered out"
+[ "$failed" -gt 0 ] && exit 1
+exit 0
