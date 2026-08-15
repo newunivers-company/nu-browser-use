@@ -39,6 +39,7 @@ import argparse
 import datetime as dt
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -121,16 +122,30 @@ WEEKLY: list[tuple[str, list[str], int]] = [
 #                           newtoki_watch.py. Not scheduled until that conflict
 #                           is settled by a human.
 UNSCHEDULED_BY_DESIGN = {
-	'gutenberg_catalog_collect.py', 'loc_collect.py', 'wikidata_graph_collect.py',
-	'videofeedback_collect.py', 'pin_collect.py', 'shotdeck_collect.py',
-	'shotdeck_render_collect.py', 'dramabox_collect.py', 'vigloo_collect.py',
-	'newtoki_watch.py', 'promo_recon.py', 'newtoki_calibrate.py',
-	'login_source_probe.py', 'promo_browser_collect.py', 'munpia_collect.py',
+	'gutenberg_catalog_collect.py',
+	'loc_collect.py',
+	'wikidata_graph_collect.py',
+	'videofeedback_collect.py',
+	'pin_collect.py',
+	'shotdeck_collect.py',
+	'shotdeck_render_collect.py',
+	'dramabox_collect.py',
+	'vigloo_collect.py',
+	'newtoki_watch.py',
+	'promo_recon.py',
+	'newtoki_calibrate.py',
+	'login_source_probe.py',
+	'promo_browser_collect.py',
+	'munpia_collect.py',
 	'browser_upgrade_review.py',
-	'comfy_workflow_collect.py', 'fal_collect.py',
-	'vigloo_assets.py', 'vigloo_episode_thumbs.py',
-	'newtoki_market_intel.py', 'newtoki_work_meta.py',
+	'comfy_workflow_collect.py',
+	'fal_collect.py',
+	'vigloo_assets.py',
+	'vigloo_episode_thumbs.py',
+	'newtoki_market_intel.py',
+	'newtoki_work_meta.py',
 }
+
 
 def env_for_step() -> dict[str, str]:
 	"""Collector output roots default to $HOME, which is what staging reads."""
@@ -148,8 +163,13 @@ def run_step(name: str, argv: list[str], minutes: int, dry_run: bool) -> dict:
 	print(f'  {name} ...', end='', flush=True)
 	try:
 		proc = subprocess.run(
-			[PYTHON, *argv], cwd=str(REPO_ROOT), env=env_for_step(),
-			capture_output=True, text=True, encoding='utf-8', errors='replace',
+			[PYTHON, *argv],
+			cwd=str(REPO_ROOT),
+			env=env_for_step(),
+			capture_output=True,
+			text=True,
+			encoding='utf-8',
+			errors='replace',
 			timeout=minutes * 60,
 		)
 		status = 'ok' if proc.returncode == 0 else 'failed'
@@ -167,6 +187,56 @@ def run_step(name: str, argv: list[str], minutes: int, dry_run: bool) -> dict:
 	}
 
 
+def find_posix_shell() -> tuple[Path | None, str]:
+	"""The shell that shares a filesystem view with the collectors.
+
+	On Windows, `bash` on PATH resolves to System32\\bash.exe — the WSL launcher.
+	WSL is a different machine for our purposes: $HOME is /home/<user>, none of
+	the Windows-side collector output is visible there, and environment variables
+	do not cross without WSLENV. Staging under it therefore discovers a
+	*different* set of directories, copies those, and reports success — a green
+	cycle that never deployed anything it collected. Git Bash shares the Windows
+	filesystem and is the only correct choice here.
+	"""
+	if os.name != 'nt':
+		found = shutil.which('bash')
+		return (Path(found) if found else None), 'posix host'
+	candidates = [
+		Path(r'C:\Program Files\Git\bin\bash.exe'),
+		Path(r'C:\Program Files\Git\usr\bin\bash.exe'),
+		Path(r'C:\Program Files (x86)\Git\bin\bash.exe'),
+	]
+	on_path = shutil.which('bash')
+	if on_path and 'system32' not in on_path.lower():
+		candidates.insert(0, Path(on_path))
+	for candidate in candidates:
+		if candidate.exists():
+			return candidate, str(candidate)
+	return None, 'no Git Bash found'
+
+
+def shell_sees_our_home(shell: Path) -> tuple[bool, str]:
+	"""Refuse to stage from a shell whose $HOME is not the one the collectors wrote to."""
+	try:
+		proc = subprocess.run(
+			[str(shell), '-c', 'echo "$HOME"'],
+			capture_output=True,
+			text=True,
+			encoding='utf-8',
+			errors='replace',
+			timeout=60,
+		)
+	except (subprocess.TimeoutExpired, OSError) as exc:
+		return False, type(exc).__name__
+	seen = (proc.stdout or '').strip()
+	if not seen:
+		return False, 'shell reported no $HOME'
+	# Git Bash spells C:\Users\USER as /c/Users/USER; compare on that footing.
+	drive, _, rest = str(Path.home()).partition(':')
+	expected = f'/{drive.lower()}{rest}'.replace('\\', '/')
+	return seen.lower() == expected.lower(), f'{seen} (expected {expected})'
+
+
 def stage(dry_run: bool) -> dict:
 	"""Stage 2 of the deploy. Runs even when steps failed — partial data still ships."""
 	script = HERE / 'stage_to_nas.sh'
@@ -175,10 +245,32 @@ def stage(dry_run: bool) -> dict:
 		return {'step': 'stage_to_nas', 'status': 'dry_run', 'seconds': 0}
 	started = dt.datetime.now(dt.timezone.utc)
 	print('  stage_to_nas ...', end='', flush=True)
+	shell, how = find_posix_shell()
+	if shell is None:
+		print(f' failed (0s) — {how}')
+		return {'step': 'stage_to_nas', 'status': 'failed', 'seconds': 0.0, 'tail': [f'no usable shell: {how}']}
+	ok_home, detail = shell_sees_our_home(shell)
+	if not ok_home:
+		# Louder than a silent mis-stage: this is the failure that looks like success.
+		print(' failed (0s) — wrong filesystem view')
+		return {
+			'step': 'stage_to_nas',
+			'status': 'failed',
+			'seconds': 0.0,
+			'tail': [f'{shell} has $HOME={detail}; it cannot see the collector output, refusing to stage'],
+		}
 	try:
+		# Relative to REPO_ROOT: MSYS bash rejects a `C:\...` or `C:/...` argument.
+		rel = script.relative_to(REPO_ROOT).as_posix()
 		proc = subprocess.run(
-			['bash', str(script)], cwd=str(REPO_ROOT), env=env_for_step(),
-			capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60 * 60,
+			[str(shell), rel],
+			cwd=str(REPO_ROOT),
+			env=env_for_step(),
+			capture_output=True,
+			text=True,
+			encoding='utf-8',
+			errors='replace',
+			timeout=60 * 60,
 		)
 		status = 'ok' if proc.returncode == 0 else 'failed'
 		tail = (proc.stdout or proc.stderr or '').strip().splitlines()[-8:]

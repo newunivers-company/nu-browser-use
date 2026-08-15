@@ -23,6 +23,8 @@ from pathlib import Path
 
 import pytest
 
+from scripts.site_collectors import collect_cycle
+
 COLLECTORS_DIR = Path(__file__).resolve().parents[2] / 'scripts' / 'site_collectors'
 STAGE_SCRIPT = COLLECTORS_DIR / 'stage_to_nas.sh'
 
@@ -96,3 +98,33 @@ def test_excluded_dirs_are_not_also_matched_by_the_script():
 def test_suffixless_output_dirs_are_covered(name):
 	"""Regression: the dirs the *_export rewrite dropped on the floor."""
 	assert matches_staging(name, staging_patterns()), f'{name} is not matched by stage_to_nas.sh'
+
+
+# --- which shell stages ------------------------------------------------------
+# The cadence spawns a shell to stage. On Windows, `bash` on PATH is the WSL
+# launcher: a different $HOME, none of the collector output visible, and no
+# environment variables crossing into it. Staging under WSL copied an unrelated
+# set of directories and reported success — the cycle went green having deployed
+# nothing it collected. These check the guard that now refuses that.
+
+
+def test_staging_shell_is_never_the_wsl_launcher():
+	shell, how = collect_cycle.find_posix_shell()
+	assert shell is not None, f'no usable shell for staging: {how}'
+	assert 'system32' not in str(shell).lower(), f'staging would run under the WSL launcher: {shell}'
+
+
+def test_staging_shell_shares_the_collectors_filesystem():
+	"""The positive case: the chosen shell's $HOME is where the collectors write."""
+	shell, _ = collect_cycle.find_posix_shell()
+	if shell is None:
+		pytest.skip('no posix shell available on this host')
+	ok, detail = collect_cycle.shell_sees_our_home(shell)
+	assert ok, f'staging shell cannot see the collector output: {detail}'
+
+
+@pytest.mark.skipif(not Path(r'C:\Windows\System32\bash.exe').exists(), reason='WSL launcher not installed')
+def test_the_guard_actually_rejects_a_foreign_shell():
+	"""A check that passes everything is not a check — WSL must fail it."""
+	ok, detail = collect_cycle.shell_sees_our_home(Path(r'C:\Windows\System32\bash.exe'))
+	assert not ok, f'the WSL launcher passed the home check, so the guard is inert: {detail}'
