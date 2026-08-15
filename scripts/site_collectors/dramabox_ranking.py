@@ -41,9 +41,16 @@ def extract_rails(html: str) -> dict:
 	if not match:
 		return {}
 	try:
-		props = json.loads(match.group(1))['props']['pageProps']
+		payload = json.loads(match.group(1))
+		props = payload['props']['pageProps']
 	except (json.JSONDecodeError, KeyError):
 		return {}
+	# The page is statically generated, so viewCount is fixed at build time, not a
+	# live counter: two fresh fetches 20 hours apart returned identical figures
+	# under buildId dramaboxapp_prod_20260703 — a build six weeks old. Without the
+	# build id, "the rails did not change" and "the site has not been rebuilt" are
+	# the same flat series and mean different things.
+	build_id = payload.get('buildId')
 	featured = [
 		{'bookId': w.get('bookId'), 'bookName': w.get('bookName'), 'viewCount': w.get('viewCount'), 'tags': w.get('tags') or []}
 		for w in props.get('bigList') or []
@@ -58,18 +65,28 @@ def extract_rails(html: str) -> dict:
 		]
 		if items:
 			rails.append({'name': rail.get('name'), 'items': items})
-	return {'featured': featured, 'rails': rails}
+	return {'build_id': build_id, 'featured': featured, 'rails': rails}
 
 
-def _observation(rail_name: str, rank: int, work: dict, locale: str, now: str) -> dict:
+def _observation(rail_name: str, rank: int, work: dict, locale: str, now: str, build_id: str | None) -> dict:
 	"""One PLATFORM_INTERNAL observation row."""
 	return {
-		'source': 'dramaboxapp.com', 'ranking_name': rail_name, 'rank_type': 'PLATFORM_INTERNAL',
-		'entity_type': 'work', 'entity_id': str(work.get('bookId')), 'entity_title': work.get('bookName'),
+		'source': 'dramaboxapp.com',
+		'ranking_name': rail_name,
+		'rank_type': 'PLATFORM_INTERNAL',
+		# Which build these figures were baked into; identical build means the
+		# reading is a repeat, not a confirmation that nothing moved.
+		'build_id': build_id,
+		'entity_type': 'work',
+		'entity_id': str(work.get('bookId')),
+		'entity_title': work.get('bookName'),
 		'scope': {'type': 'platform', 'platform': 'dramabox', 'locale': locale},
 		'period': {'type': 'daily'},
-		'rank': rank, 'raw_metric_name': 'view_count', 'raw_score': work.get('viewCount'),
-		'source_url': HOME_URL.format(locale=locale), 'observed_at': now,
+		'rank': rank,
+		'raw_metric_name': 'view_count',
+		'raw_score': work.get('viewCount'),
+		'source_url': HOME_URL.format(locale=locale),
+		'observed_at': now,
 	}
 
 
@@ -87,11 +104,12 @@ async def collect_locale(session: aiohttp.ClientSession, locale: str, today: str
 		return data
 
 	observations = []
+	build_id = data.get('build_id')
 	for position, work in enumerate(data.get('featured') or [], 1):
-		observations.append(_observation('featured', position, work, locale, now))
+		observations.append(_observation('featured', position, work, locale, now, build_id))
 	for rail in data.get('rails') or []:
 		for position, work in enumerate(rail['items'], 1):
-			observations.append(_observation(f"rail:{rail['name']}", position, work, locale, now))
+			observations.append(_observation(f'rail:{rail["name"]}', position, work, locale, now, build_id))
 	data['observations'] = observations
 
 	snap_dir = OUT_DIR / 'snapshots' / today

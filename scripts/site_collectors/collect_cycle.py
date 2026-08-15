@@ -67,12 +67,17 @@ DAILY: list[tuple[str, list[str], int]] = [
 	('mydrama', [str(HERE / 'mydrama_collect.py')], 20),
 	('reelshort', [str(HERE / 'reelshort_collect.py'), '--no-posters'], 30),
 	('netshort', [str(HERE / 'netshort_collect.py')], 20),
-	# Rail ordinals, not the catalogue: DramaBox's homepage ordering is itself a
-	# PLATFORM_INTERNAL ranking and changes daily.
-	('dramabox_rails', [str(HERE / 'dramabox_ranking.py')], 15),
 ]
 
 WEEKLY: list[tuple[str, list[str], int]] = [
+	# Rail ordinals, not the catalogue: DramaBox's homepage ordering is a
+	# PLATFORM_INTERNAL ranking. It was daily on the assumption the ordering
+	# turns over daily; it does not. The page is statically generated, so the
+	# rails and their viewCounts are fixed at build time — two fresh fetches 20
+	# hours apart returned byte-identical figures under a buildId six weeks old.
+	# Daily would bank the same 42 observations every day until DramaBox next
+	# deploys, so this now samples at a rate a rebuild can actually beat.
+	('dramabox_rails', [str(HERE / 'dramabox_ranking.py')], 15),
 	('registry_verify', [str(HERE / 'promo_registry_verify.py')], 15),
 	('corpsites', [str(HERE / 'corpsite_watch.py')], 15),
 	('verticaldrama', [str(HERE / 'verticaldrama_collect.py')], 15),
@@ -308,19 +313,27 @@ def main() -> int:
 	OUT_DIR.mkdir(parents=True, exist_ok=True)
 	(OUT_DIR / 'runs').mkdir(exist_ok=True)
 	stamp = dt.date.today().isoformat()
+	report_path = OUT_DIR / 'runs' / f'{stamp}-{cadence}.json'
 	report = {
 		'cadence': cadence,
 		'started_at': started.isoformat(),
 		'seconds': round((dt.datetime.now(dt.timezone.utc) - started).total_seconds(), 1),
 		'steps': results,
 	}
-	(OUT_DIR / 'runs' / f'{stamp}-{cadence}.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
+	# A dry run must never stand in for a real one. Writing unconditionally cost
+	# us today's real daily record — twelve steps with their output tails,
+	# replaced by a listing of what would have run, and only recoverable because
+	# staging had already copied it to the NAS.
+	if args.dry_run and report_path.exists():
+		print(f'\n(dry run) leaving the existing record at {report_path} untouched')
+	else:
+		report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
 
 	failed = [r for r in results if r['status'] in ('failed', 'timeout')]
 	print(f'\n{len(results) - len(failed)}/{len(results)} ok, {len(failed)} failed in {report["seconds"] / 60:.1f}m')
 	for row in failed:
 		print(f'  FAILED {row["step"]}: {"; ".join(row.get("tail") or [])[:120]}')
-	print(f'-> {OUT_DIR / "runs" / f"{stamp}-{cadence}.json"}')
+	print(f'-> {report_path}')
 	# Non-zero only if everything failed; a partial cycle is still a useful cycle.
 	return 1 if failed and len(failed) == len(results) else 0
 
