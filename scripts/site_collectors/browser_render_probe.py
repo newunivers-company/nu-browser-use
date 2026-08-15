@@ -25,12 +25,20 @@ WHAT IS COUNTED, AND WHY THESE
                 the structured counts is the signature of a page that renders
                 prose, not data — worth knowing before writing a collector.
 
-CONTROLS
-A probe that reports "no gain" everywhere is indistinguishable from a broken
-probe, so the run includes sources already known to collect over HTTP. If those
-do not show comparable counts on both sides, the measurement is faulty and the
-zeros elsewhere mean nothing. This is the same discipline newtoki_watch's
-control query enforces, for the same reason.
+VALIDATION
+A probe reporting "no gain" everywhere is indistinguishable from a broken probe,
+so every run has to establish that its HTTP path works before its zeros mean
+anything. The first attempt did this by including sources known to collect over
+HTTP and passing if any of them measured non-zero — which passed on 1 of 4, and
+was wrong twice over: the threshold accepted a single success, and three of the
+four collect through feeds while their pages are JS shells, so a zero there was
+the correct reading.
+
+Agreement is the check that needs no curation. If the HTTP measurement were
+broken it could not reproduce the browser's numbers on independent sites, and
+kakuyomu_ranking reads 67,410 characters and 810 links on both sides to the
+digit. A run with at least three such agreements has a working HTTP path; below
+that the run says so and its browser_wins verdicts are marked unproven.
 
 ROBOTS
 The page path is checked before any navigation and the browser is pinned to the
@@ -315,6 +323,10 @@ async def main() -> None:
 					'rendered_ld': rendered['ld_items'],
 					'http_links': http['item_links'],
 					'rendered_links': rendered['item_links'],
+					'http_query_links': http.get('query_links'),
+					'rendered_query_links': rendered.get('query_links'),
+					'http_total_links': http.get('total_links'),
+					'rendered_total_links': rendered.get('total_links'),
 					'http_og': http['og_props'],
 					'rendered_og': rendered['og_props'],
 					'http_text': http['text_chars'],
@@ -345,11 +357,39 @@ async def main() -> None:
 
 	tally = Counter(r['probe'] for r in results)
 	print('\nverdicts:', dict(tally))
-	controls = [r for r in results if r.get('prior_verdict') == CONTROL_VERDICT]
+	# VALIDATION
+	#
+	# The first design picked "sources that already collect over HTTP" as
+	# controls and passed if any of them measured non-zero. Both halves were
+	# wrong. `if measured` treats 1 of 4 as success, and it printed "measurement
+	# trusted" on exactly that. Worse, three of the four collect through feeds
+	# and APIs while their *pages* are JS shells, so a zero on the page body was
+	# the correct reading and not evidence of anything.
+	#
+	# Agreement is the better check and needs no curation: if the HTTP-side
+	# measurement were broken it could not reproduce the browser's numbers on
+	# independent sites. kakuyomu_ranking reads 67,461 characters and 802 links
+	# on both sides, to the digit. Any run with several such agreements has a
+	# working HTTP path, whatever the curated controls do.
+	scored = [r for r in results if r.get('probe') not in ('skipped_robots', None)]
+	agreeing = [
+		r for r in scored if r.get('http_text') and abs((r.get('rendered_text') or 0) - r['http_text']) <= 0.15 * r['http_text']
+	]
+	print(f'validation: {len(agreeing)}/{len(scored)} sources read the same over HTTP and rendered', end=' ')
+	print(
+		'- HTTP path confirmed working'
+		if len(agreeing) >= 3
+		else '- TOO FEW AGREEMENTS, treat every browser_wins below as unproven'
+	)
+	for row in agreeing[:4]:
+		print(f'    {row["id"]:24} text {row["http_text"]:>7,} vs {row["rendered_text"]:>7,}')
+
+	controls = [r for r in results if r.get('prior_verdict') == CONTROL_VERDICT and r.get('probe') != 'skipped_robots']
 	if controls:
-		measured = sum(1 for c in controls if (c.get('http_ld') or 0) + (c.get('http_links') or 0) > 0)
-		print(f'controls: {measured}/{len(controls)} known-HTTP sources measured non-zero over HTTP', end=' ')
-		print('- measurement trusted' if measured else '- MEASUREMENT SUSPECT, treat every zero above as unproven')
+		measured = sum(1 for c in controls if (c.get('http_text') or 0) > 0)
+		# Reported, not used as the gate: a source collected via its feed can
+		# legitimately serve a page with no text at all.
+		print(f'curated controls: {measured}/{len(controls)} had page text over HTTP (feed-collected sources need not)')
 	wins = [r for r in results if r['probe'] in ('browser_wins', 'browser_only')]
 	if wins:
 		print(f'\nworth a browser ({len(wins)}):')
