@@ -1,10 +1,17 @@
-"""Cross-source title join — one work identity across five platform catalogs.
+"""Cross-source title join — one work identity across seven platform catalogs.
 
-Five collectors produced 1,524 title records, each keyed by its own platform id
-(GoodShort bookId, My Drama UUID, DramaBoxDB bookId, FlexTV and ShortMax slugs).
-Nothing joins them, so questions that need more than one source — is a title
-carried by several platforms, do the platforms agree on how it performs, does a
-trope travel — cannot currently be asked at all.
+Seven collectors produce ~55,200 title records, each keyed by its own platform
+id (GoodShort bookId, My Drama UUID, DramaBoxDB bookId, netshort dramaId,
+ReelShort book_id, FlexTV and ShortMax slugs). Nothing joins them, so questions
+that need more than one source — is a title carried by several platforms, do the
+platforms agree on how it performs, does a trope travel — cannot be asked at all.
+
+netshort and ReelShort were missing from this list until 2026-08-15, and netshort
+alone is 51,834 titles. Adding them took the joined set from 2,545 works to
+53,074 and cross-platform works from 39 to 253. The *rate* fell, 1.5% to 0.48%,
+because netshort is large and largely disjoint — which is why the rate on its own
+is the wrong number to quote. The absolute count is the evidence; the rate is a
+statement about catalogue sizes.
 
 HOW CONFIDENT A MATCH IS, AND WHY THAT MATTERS HERE
 Short-drama titles are formulaic by design: dozens begin "The Billionaire's",
@@ -73,29 +80,87 @@ NEAR_THRESHOLD = 0.70
 # kept under the platform's own name so nothing implies the units agree.
 SOURCES: dict[str, dict] = {
 	'goodshort': {
-		'env': 'GOODSHORT_OUT', 'default': 'goodshort_export', 'file': 'books.json',
-		'id': 'bookId', 'title': 'bookName', 'views': 'viewCount', 'episodes': 'chapterCount',
-		'genres': ('genres', 'tropes'), 'url': 'url',
+		'env': 'GOODSHORT_OUT',
+		'default': 'goodshort_export',
+		'file': 'books.json',
+		'id': 'bookId',
+		'title': 'bookName',
+		'views': 'viewCount',
+		'episodes': 'chapterCount',
+		'genres': ('genres', 'tropes'),
+		'url': 'url',
 	},
 	'mydrama': {
-		'env': 'MYDRAMA_OUT', 'default': 'mydrama_export', 'file': 'series.json',
-		'id': 'series_id', 'title': 'title', 'views': 'watch_count', 'episodes': 'episodes',
-		'genres': ('genres',), 'url': 'url',
+		'env': 'MYDRAMA_OUT',
+		'default': 'mydrama_export',
+		'file': 'series.json',
+		'id': 'series_id',
+		'title': 'title',
+		'views': 'watch_count',
+		'episodes': 'episodes',
+		'genres': ('genres',),
+		'url': 'url',
 	},
 	'dramaboxdb': {
-		'env': 'DRAMABOXDB_OUT', 'default': 'dramaboxdb_export', 'file': 'books.json',
-		'id': 'book_id', 'title': 'title', 'views': 'view_count', 'episodes': 'chapter_count',
-		'genres': ('genre',), 'url': 'url',
+		'env': 'DRAMABOXDB_OUT',
+		'default': 'dramaboxdb_export',
+		'file': 'books.json',
+		'id': 'book_id',
+		'title': 'title',
+		'views': 'view_count',
+		'episodes': 'chapter_count',
+		'genres': ('genre',),
+		'url': 'url',
 	},
 	'flextv': {
-		'env': 'FLEXTV_OUT', 'default': 'flextv_export', 'file': 'dramas.json',
-		'id': 'drama_id', 'title': 'title', 'views': 'views', 'episodes': None,
-		'genres': (), 'url': 'url',
+		'env': 'FLEXTV_OUT',
+		'default': 'flextv_export',
+		'file': 'dramas.json',
+		'id': 'drama_id',
+		'title': 'title',
+		'views': 'views',
+		'episodes': None,
+		'genres': (),
+		'url': 'url',
 	},
 	'shortmax': {
-		'env': 'SHORTMAX_OUT', 'default': 'shortmax_export', 'file': 'dramas.json',
-		'id': 'drama_id', 'title': 'title', 'views': 'plays', 'episodes': 'episodes',
-		'genres': ('category',), 'url': 'url',
+		'env': 'SHORTMAX_OUT',
+		'default': 'shortmax_export',
+		'file': 'dramas.json',
+		'id': 'drama_id',
+		'title': 'title',
+		'views': 'plays',
+		'episodes': 'episodes',
+		'genres': ('category',),
+		'url': 'url',
+	},
+	# netshort and reelshort were both absent, which is why the join reported
+	# only 1.5% of works on more than one platform. netshort alone carries 51,834
+	# titles — twenty times the entire joined set — so their absence was not a
+	# rounding error in the cross-platform figure, it was the figure.
+	# netshort publishes no view or genre field; recording that as None is
+	# honest, and the title is what the join needs.
+	'netshort': {
+		'env': 'NETSHORT_OUT',
+		'default': 'netshort_export',
+		'file': 'dramas.json',
+		'id': 'dramaId',
+		'title': 'title',
+		'views': None,
+		'episodes': 'episodeCount',
+		'genres': (),
+		'url': 'url',
+	},
+	'reelshort': {
+		'env': 'REELSHORT_OUT',
+		'default': 'reelshort_export',
+		'file': 'books.json',
+		'id': 'book_id',
+		'title': 'book_title',
+		'views': 'read_count',
+		'episodes': 'chapter_count',
+		'genres': ('theme', 'theme_list'),
+		'url': None,
 	},
 }
 
@@ -128,16 +193,21 @@ def load(name: str, spec: dict, root: Path | None) -> list[dict]:
 		title = record.get(spec['title'])
 		if not title:
 			continue
-		rows.append({
-			'platform': name,
-			'platform_id': str(record.get(spec['id'])),
-			'title': title,
-			'key': normalize(strip_decorations(title)),
-			'views': record.get(spec['views']),
-			'episodes': record.get(spec['episodes']) if spec['episodes'] else None,
-			'genres': genre_values(record, spec['genres']),
-			'url': record.get(spec['url']),
-		})
+		rows.append(
+			{
+				'platform': name,
+				'platform_id': str(record.get(spec['id'])),
+				'title': title,
+				'key': normalize(strip_decorations(title)),
+				# Some catalogues publish no views and some no canonical URL; a spec
+				# may therefore name None rather than a field, which is different
+				# from naming a field that happens to be empty.
+				'views': record.get(spec['views']) if spec['views'] else None,
+				'episodes': record.get(spec['episodes']) if spec['episodes'] else None,
+				'genres': genre_values(record, spec['genres']),
+				'url': record.get(spec['url']) if spec['url'] else None,
+			}
+		)
 	print(f'  {name}: {len(rows)} titles')
 	return rows
 
@@ -151,16 +221,25 @@ def build_works(rows: list[dict]) -> list[dict]:
 	works = []
 	for key, members in grouped.items():
 		platforms = sorted({m['platform'] for m in members})
-		works.append({
-			'key': key,
-			'title': sorted(members, key=lambda m: len(m['title']))[0]['title'],
-			'platforms': platforms,
-			'platform_count': len(platforms),
-			'records': {
-				m['platform']: {'id': m['platform_id'], 'title': m['title'], 'views': m['views'], 'episodes': m['episodes'], 'genres': m['genres'], 'url': m['url']}
-				for m in members
-			},
-		})
+		works.append(
+			{
+				'key': key,
+				'title': sorted(members, key=lambda m: len(m['title']))[0]['title'],
+				'platforms': platforms,
+				'platform_count': len(platforms),
+				'records': {
+					m['platform']: {
+						'id': m['platform_id'],
+						'title': m['title'],
+						'views': m['views'],
+						'episodes': m['episodes'],
+						'genres': m['genres'],
+						'url': m['url'],
+					}
+					for m in members
+				},
+			}
+		)
 	return sorted(works, key=lambda w: (-w['platform_count'], w['title']))
 
 
@@ -180,11 +259,15 @@ def near_candidates(works: list[dict], limit: int) -> list[dict]:
 					continue
 				score = similarity(left['key'], right['key'])
 				if score >= NEAR_THRESHOLD:
-					out.append({
-						'score': round(score, 3),
-						'left_platform': left_platform, 'left_title': left['title'],
-						'right_platform': right_platform, 'right_title': right['title'],
-					})
+					out.append(
+						{
+							'score': round(score, 3),
+							'left_platform': left_platform,
+							'left_title': left['title'],
+							'right_platform': right_platform,
+							'right_title': right['title'],
+						}
+					)
 			if len(out) >= limit:
 				return sorted(out, key=lambda r: -r['score'])[:limit]
 	return sorted(out, key=lambda r: -r['score'])[:limit]
@@ -212,22 +295,32 @@ def ratio_report(works: list[dict]) -> list[dict]:
 	rows = []
 	for (left, right), values in sorted(ratios.items(), key=lambda kv: -len(kv[1])):
 		values.sort()
-		rows.append({
-			'platform_a': left, 'platform_b': right, 'shared_works': len(values),
-			'min_ratio': round(values[0], 2), 'median_ratio': round(statistics.median(values), 2),
-			'max_ratio': round(values[-1], 2), 'spread': round(values[-1] / values[0], 1) if values[0] else None,
-		})
+		rows.append(
+			{
+				'platform_a': left,
+				'platform_b': right,
+				'shared_works': len(values),
+				'min_ratio': round(values[0], 2),
+				'median_ratio': round(statistics.median(values), 2),
+				'max_ratio': round(values[-1], 2),
+				'spread': round(values[-1] / values[0], 1) if values[0] else None,
+			}
+		)
 	return rows
 
 
 def write_outputs(works: list[dict], near: list[dict], now: str) -> None:
 	OUT_DIR.mkdir(parents=True, exist_ok=True)
-	(OUT_DIR / 'works.json').write_text(json.dumps({'built_at': now, 'works': works}, ensure_ascii=False, indent=2), encoding='utf-8')
+	(OUT_DIR / 'works.json').write_text(
+		json.dumps({'built_at': now, 'works': works}, ensure_ascii=False, indent=2), encoding='utf-8'
+	)
 
 	platforms = list(SOURCES)
 	with (OUT_DIR / 'works.csv').open('w', newline='', encoding='utf-8-sig') as handle:
 		writer = csv.writer(handle)
-		writer.writerow(['title', 'platform_count', 'platforms'] + [f'{p}_views' for p in platforms] + [f'{p}_episodes' for p in platforms])
+		writer.writerow(
+			['title', 'platform_count', 'platforms'] + [f'{p}_views' for p in platforms] + [f'{p}_episodes' for p in platforms]
+		)
 		for work in works:
 			records = work['records']
 			writer.writerow(
@@ -250,7 +343,9 @@ def write_outputs(works: list[dict], near: list[dict], now: str) -> None:
 
 	ratios = ratio_report(works)
 	with (OUT_DIR / 'cross_platform_ratios.csv').open('w', newline='', encoding='utf-8-sig') as handle:
-		writer = csv.DictWriter(handle, fieldnames=['platform_a', 'platform_b', 'shared_works', 'min_ratio', 'median_ratio', 'max_ratio', 'spread'])
+		writer = csv.DictWriter(
+			handle, fieldnames=['platform_a', 'platform_b', 'shared_works', 'min_ratio', 'median_ratio', 'max_ratio', 'spread']
+		)
 		writer.writeheader()
 		writer.writerows(ratios)
 
@@ -304,14 +399,19 @@ def main() -> None:
 	if multi:
 		print('\nworks carried by more than one platform:')
 		for work in multi[:15]:
-			views = ', '.join(f'{p}={work["records"][p]["views"]:,}' if isinstance(work['records'][p]['views'], int) else f'{p}=?' for p in work['platforms'])
+			views = ', '.join(
+				f'{p}={work["records"][p]["views"]:,}' if isinstance(work['records'][p]['views'], int) else f'{p}=?'
+				for p in work['platforms']
+			)
 			print(f'  {work["title"][:46]:48} {views}')
 
 	ratios = [r for r in ratio_report(works) if r['shared_works'] >= 3]
 	if ratios:
 		print('\nview-count ratio on shared works (why metrics are never combined):')
 		for row in ratios:
-			print(f'  {row["platform_a"]}/{row["platform_b"]}  n={row["shared_works"]:<3} median={row["median_ratio"]}x  range {row["min_ratio"]}x-{row["max_ratio"]}x  spread {row["spread"]}x')
+			print(
+				f'  {row["platform_a"]}/{row["platform_b"]}  n={row["shared_works"]:<3} median={row["median_ratio"]}x  range {row["min_ratio"]}x-{row["max_ratio"]}x  spread {row["spread"]}x'
+			)
 		if any(r['spread'] and r['spread'] > 10 for r in ratios):
 			print('  no stable conversion factor — these counters measure different things')
 
