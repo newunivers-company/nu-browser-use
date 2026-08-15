@@ -405,7 +405,7 @@ sources:
     access: public_javascript
     test_level: availability
     expected_http_statuses: [200, 403, 429]
-    description: Image and prompt discovery search application.
+    description: "Image and prompt discovery search application. UNREACHABLE as of 2026-08-15: the host does not resolve (ClientConnectorError on both / and /robots.txt), so the expected statuses below describe a site that no longer answers. Kept as a record rather than deleted; not collected."
 
   - id: civitai_images
     name: Civitai Images
@@ -701,7 +701,7 @@ sources:
     access: anti_bot_protected
     test_level: availability
     expected_http_statuses: [200, 403, 503]
-    description: "Character archetype/trope taxonomy; REFERENCE_ONLY, derived ontology only (no bulk copy)."
+    description: "Character archetype/trope taxonomy; REFERENCE_ONLY, derived ontology only (no bulk copy). Measured 2026-08-15: / and /robots.txt both return 403 to a plain client. That is the declared anti_bot_protected steady state and agrees with the ban on scraping AI-bot-blocked sources in docs/collection-policy.md - the 403 is the expected outcome, not a fault to route around."
 
   - id: kmdb
     name: "KMDb"
@@ -1481,7 +1481,7 @@ sources:
     access: public_javascript
     test_level: availability
     expected_http_statuses: [200]
-    description: "Korean resale: trending items, rising brands, transaction/resale-price signals."
+    description: "Korean resale: trending items, rising brands, transaction/resale-price signals. DEGRADED as of 2026-08-15: root and /robots.txt both return HTTP 500 to a plain client, so the [200] expectation is unmet and this source is unverified rather than merely unvisited."
 
   - id: twentyninecm
     name: "29CM"

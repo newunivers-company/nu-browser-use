@@ -484,6 +484,14 @@ async def main() -> None:
 		print(f'promoted {len(promoted)} channel-less sources that declare a Sitemap: in robots')
 	if args.only_channel:
 		queue = [d for d in queue if d['channel'] == args.only_channel]
+	# named_ai_block means the file names an AI crawler AND disallows it. Merely
+	# *mentioning* one is a different fact and not a restriction: news.coupang.com
+	# names ClaudeBot to write `Allow: /`, and reallusion.com names GPTBot only to
+	# keep it out of /feedbacktracker/. 13 of the 44 sources that mention AI
+	# crawlers are in that position and are collected, correctly. Conflating the
+	# two readings turns an invitation into a prohibition — worth restating here
+	# because it is an easy misreading to make from the `robots_ai_named` field
+	# alone.
 	skipped_named = [d['id'] for d in dossiers if d.get('robots') == 'named_ai_block']
 	skipped_block = [d['id'] for d in dossiers if d.get('robots') == 'disallow']
 
@@ -494,7 +502,10 @@ async def main() -> None:
 		pending = pending[: args.limit]
 
 	print(f'queue {len(queue)} robots-clean collectable sources | already walked {len(done)} | this pass {len(pending)}')
-	print(f'excluded: {len(skipped_block)} robots-disallow, {len(skipped_named)} AI-crawler-named (awaiting ruling)')
+	# Not "awaiting ruling", as this said for days: docs/collection-policy.md
+	# 수집 금지 already forbids scraping sources that block AI crawlers by name.
+	# Printing it as an open question kept a settled decision on the list.
+	print(f'excluded: {len(skipped_block)} robots-disallow, {len(skipped_named)} AI-crawler-blocked (docs/collection-policy.md)')
 
 	results = []
 	async with aiohttp.ClientSession(headers=HEADERS) as session:

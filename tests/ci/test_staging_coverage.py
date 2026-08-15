@@ -132,3 +132,23 @@ def test_the_guard_actually_rejects_a_foreign_shell():
 	"""A check that passes everything is not a check — WSL must fail it."""
 	ok, detail = collect_cycle.shell_sees_our_home(Path(r'C:\Windows\System32\bash.exe'))
 	assert not ok, f'the WSL launcher passed the home check, so the guard is inert: {detail}'
+
+
+# --- what the collection loop is allowed to walk -----------------------------
+# The "31 AI-crawler-named sources awaiting a ruling" sat on the open-questions
+# list for days. There was no open question: docs/collection-policy.md already
+# forbids scraping sources that block AI crawlers by name, and the loop already
+# refused them. What kept it open was the loop printing "awaiting ruling", and a
+# reviewer (me) confusing "robots mentions an AI crawler" with "robots blocks
+# us" — news.coupang.com names ClaudeBot precisely to write `Allow: /`.
+
+
+def test_collection_loop_permits_only_unrestricted_robots_verdicts():
+	from scripts.site_collectors import source_collect_loop
+
+	permitted = source_collect_loop.PERMITTED_ROBOTS
+	for forbidden in ('disallow', 'named_ai_block', 'ai_train_reserved'):
+		assert forbidden not in permitted, (
+			f'the collection loop would walk sources whose robots verdict is {forbidden!r}; docs/collection-policy.md forbids it'
+		)
+	assert permitted == {'allow', 'unknown'}, f'unexpected PERMITTED_ROBOTS: {permitted}'

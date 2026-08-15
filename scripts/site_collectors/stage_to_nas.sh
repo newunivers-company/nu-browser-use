@@ -22,11 +22,17 @@
 
 set -u
 
+# X: is a mapped drive (\\192.168.0.136\sdb), and a drive mapping belongs to a
+# logon session — a scheduled task that runs without one sees no X: at all. The
+# UNC form of the same share needs no mapping, so it goes last as the fallback
+# that keeps staging working when the letter is absent. Order is deliberate:
+# where the mapping exists, nothing changes.
 NAS_CANDIDATES=(
 	"${NAS_ROOT:-}"
 	/mnt/newunivers-sdb/nu-browser-use
 	/x/nu-browser-use
 	/mnt/x/nu-browser-use
+	//192.168.0.136/sdb/nu-browser-use
 )
 NAS_ROOT=""
 for candidate in "${NAS_CANDIDATES[@]}"; do
