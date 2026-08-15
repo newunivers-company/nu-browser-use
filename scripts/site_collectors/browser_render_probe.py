@@ -361,9 +361,22 @@ async def main() -> None:
 			)
 
 	OUT_DIR.mkdir(parents=True, exist_ok=True)
-	(OUT_DIR / 'render_probe.json').write_text(
-		json.dumps({'probed_at': now, 'sources': results}, ensure_ascii=False, indent=1), encoding='utf-8'
-	)
+	# Merge, do not replace. A `--only` run of four sources overwrote the 34-source
+	# report and the earlier findings had to be reconstructed from the terminal
+	# scrollback — the same way a --dry-run cycle destroyed a real run record
+	# earlier today. A partial run is an update, not a new truth.
+	merged: dict[str, dict] = {}
+	probe_file = OUT_DIR / 'render_probe.json'
+	if probe_file.exists():
+		try:
+			for row in json.loads(probe_file.read_text(encoding='utf-8')).get('sources', []):
+				merged[row['id']] = row
+		except Exception:  # noqa: BLE001
+			merged = {}
+	for row in results:
+		merged[row['id']] = row
+	results = sorted(merged.values(), key=lambda r: (r.get('probe') or '', r['id']))
+	probe_file.write_text(json.dumps({'probed_at': now, 'sources': results}, ensure_ascii=False, indent=1), encoding='utf-8')
 	columns = list(results[0].keys()) if results else []
 	if columns:
 		with (OUT_DIR / 'render_probe.csv').open('w', newline='', encoding='utf-8-sig') as handle:
