@@ -120,12 +120,13 @@ WEEKLY: list[tuple[str, list[str], int]] = [
 #   one-shot asset pulls    vigloo_assets, vigloo_episode_thumbs — posters and
 #                           episode stills are fetched once and cached; re-running
 #                           re-downloads images for no new signal
-#   unresolved policy       newtoki_market_intel, newtoki_work_meta — written by
-#                           a parallel session and untracked. They enumerate a
-#                           piracy site's listings, which contradicts the
-#                           "no listing enumeration" guardrail in
-#                           newtoki_watch.py. Not scheduled until that conflict
-#                           is settled by a human.
+#   on-demand rights work   newtoki_market_intel, newtoki_work_meta — piracy
+#                           supply observation, now covered by the
+#                           권리보호·침해 유통 관측 section of
+#                           docs/collection-policy.md. Unscheduled because the
+#                           question they answer ("what circulates") is asked
+#                           occasionally, not daily, and each run drives a real
+#                           browser against a host that rotates domains.
 UNSCHEDULED_BY_DESIGN = {
 	'gutenberg_catalog_collect.py',
 	'loc_collect.py',

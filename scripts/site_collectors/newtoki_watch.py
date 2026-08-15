@@ -4,12 +4,30 @@ Purpose: rights protection. Searches newtoki for a watchlist of titles WE own
 or distribute and logs every match as takedown evidence. This is the
 anti-piracy monitoring pattern (cf. MUSO), not a catalog crawler.
 
-Scope guardrails (do not widen):
+Scope guardrails for THIS tool (do not widen):
   - queries come ONLY from the watchlist file
   - a series page is fetched ONLY for a title that matched ours, to size the
     infringement; nothing is fetched for anything else
   - evidence is counts, dates and URLs — no episode content, no images
   - no site cataloging, no listing enumeration, no index building
+
+That last line binds this module, not the project. newtoki_market_intel.py and
+newtoki_work_meta.py answer a different question the user asked on 2026-08-14 —
+which works circulate on the black market — and they do enumerate listings,
+under the supply-intelligence mandate written up in docs/collection-policy.md.
+They reuse `visit`/`pick_host` from here, so the shared floor is what matters:
+no episode pages, no images, no text bodies, and every URL checked against
+robots.txt before it is requested. Read as a project-wide ban, this line put
+those two scripts in limbo for a week; it was never that.
+
+ROBOTS
+The site publishes robots.txt: `Allow: /` with `/api/`, `/search`, `/recent`,
+`/favorites` and several board paths disallowed. Every URL these tools build is
+`/<section>` plus a query string, so all three were compliant — but by
+coincidence, since none of them checked. `visit()` now verifies before
+navigating and raises RobotsRefusal, which is deliberately not an empty result:
+a refusal that looks like "found nothing" is precisely the failure the control
+query exists to prevent.
 
 WHY THE CONTROL QUERY EXISTS
 The 2026-08-14 run reported 0 hits on all five titles. That reading was not
@@ -80,11 +98,13 @@ import re
 import sys
 import tempfile
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
 	sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
+import aiohttp
+from promo_registry_verify import robots_verdict, scalar_verdict
 from textmatch import classify as _classify
 from textmatch import normalize
 
@@ -96,6 +116,10 @@ from browser_use.browser.session import BrowserSession
 # first that answers and records which one, so a dead domain reads as "not
 # checked" rather than "nothing found".
 MIRRORS = [h for h in os.environ.get('NEWTOKI_HOSTS', 'https://newtoki1.org').split(',') if h]
+# robots.txt is fetched as ourselves, not as the browser: the question is what
+# rules apply to us, and answering it under a disguised identity would be a
+# strange way to start a compliance check.
+ROBOTS_UA = 'nu-browser-use/1.0 (+https://newunivers.com; nu@newunivers.com)'
 OUT_DIR = Path(os.environ.get('NEWTOKI_OUT', str(Path.home() / 'newtoki_watch')))
 ALLOWED = ['newtoki1.org', '*.newtoki1.org', 'newtoki.org', '*.newtoki.org']
 QUERY_WAIT = 4.0
@@ -266,7 +290,54 @@ async def evaluate(session: BrowserSession, expression: str) -> str | None:
 	return response.get('result', {}).get('value')
 
 
+class RobotsRefusal(RuntimeError):
+	"""A URL this tool must not request. Raised, never returned as an empty read."""
+
+
+_ROBOTS_CACHE: dict[str, str] = {}
+
+
+async def _robots_body(origin: str) -> str:
+	if origin in _ROBOTS_CACHE:
+		return _ROBOTS_CACHE[origin]
+	body = ''
+	try:
+		async with aiohttp.ClientSession(headers={'User-Agent': ROBOTS_UA}) as http:
+			async with http.get(f'{origin}/robots.txt', timeout=aiohttp.ClientTimeout(total=20)) as response:
+				if response.status == 200:
+					body = await response.text(errors='replace')
+	except Exception:  # noqa: BLE001
+		body = ''
+	_ROBOTS_CACHE[origin] = body
+	return body
+
+
+async def assert_robots_allows(url: str) -> None:
+	"""Refuse a disallowed path before navigating.
+
+	These tools never consulted robots.txt. As of 2026-08-15 they happened to
+	comply — the site allows `/` and disallows `/api/`, `/search`, `/recent`,
+	`/favorites` and some board paths, while every URL built here is
+	`/<section>` with a query string. But complying by coincidence is not
+	complying: `scan_recent` reads `/<section>?page=N` and is one refactor away
+	from `/recent`, and search is one redirect change away from `/search`.
+
+	Raised rather than returned, because a refusal that looks like an empty read
+	is the failure this module already has a control query to prevent.
+	"""
+	parts = urlsplit(url)
+	origin = f'{parts.scheme}://{parts.netloc}'
+	body = await _robots_body(origin)
+	if not body:
+		return  # nothing published: no rule to break
+	path = parts.path or '/'
+	verdict = scalar_verdict(robots_verdict(body, path))
+	if verdict == 'disallow':
+		raise RobotsRefusal(f'robots.txt disallows {path} on {origin}')
+
+
 async def visit(session: BrowserSession, url: str, expression: str) -> str | None:
+	await assert_robots_allows(url)
 	await asyncio.wait_for(session.event_bus.dispatch(NavigateToUrlEvent(url=url, new_tab=False)), timeout=NAV_TIMEOUT)
 	await asyncio.sleep(QUERY_WAIT)
 	return await evaluate(session, expression)
@@ -285,6 +356,8 @@ async def search_all(session: BrowserSession, host: str, query: str, sections: l
 		try:
 			for row in await search(session, host, query, section):
 				found.append({**row, 'section': section})
+		except RobotsRefusal:
+			raise  # a refusal is a decision, not a flaky query
 		except Exception as exc:  # noqa: BLE001
 			print(f'  section {section}: query failed ({type(exc).__name__})')
 		await asyncio.sleep(1.2)
@@ -297,6 +370,11 @@ async def pick_host(session: BrowserSession) -> tuple[str | None, list[dict]]:
 	for host in MIRRORS:
 		try:
 			results = await search(session, host, CONTROL_QUERY)
+		except RobotsRefusal as exc:
+			# Not a dead mirror — a mirror we are not allowed to query. Recorded
+			# distinctly so it never reads as "the host was down".
+			tried.append({'host': host, 'ok': False, 'refused_by_robots': str(exc)})
+			continue
 		except Exception as exc:  # noqa: BLE001
 			tried.append({'host': host, 'ok': False, 'error': type(exc).__name__})
 			continue

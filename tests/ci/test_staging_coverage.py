@@ -30,11 +30,15 @@ STAGE_SCRIPT = COLLECTORS_DIR / 'stage_to_nas.sh'
 
 # Output dirs deliberately kept off shared storage, with the reason.
 EXCLUDED = {
-	# Enumeration of a piracy site's listings, produced by a parallel session.
-	# It contradicts the "no listing enumeration, no index building" guardrail in
-	# newtoki_watch.py; staging would distribute that inventory. Stays local
-	# until a human settles the conflict.
-	'newtoki_market': 'conflicts with the no-listing-enumeration guardrail',
+	# Piracy-supply inventory. The earlier reason given here — that it broke
+	# newtoki_watch.py's guardrail — was wrong: that guardrail binds that module,
+	# and docs/collection-policy.md now covers supply intelligence as its own
+	# mandate. The real reason is narrower and survives the correction. Records
+	# are `id + title`, and the site resolves `<host>/<section>/<id>`, so the
+	# dataset doubles as a working index of infringing material. Holding that
+	# locally and pushing it to shared storage that syncs onward to Google Drive
+	# are different acts, and the second is a human's call.
+	'newtoki_market': 'resolvable index of infringing works; stage-3 distribution undecided',
 }
 
 HOME_DIR_RE = re.compile(r"Path\.home\(\)\s*/\s*'([A-Za-z0-9_]+)'")
