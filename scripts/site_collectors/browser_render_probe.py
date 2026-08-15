@@ -40,6 +40,16 @@ kakuyomu_ranking reads 67,410 characters and 810 links on both sides to the
 digit. A run with at least three such agreements has a working HTTP path; below
 that the run says so and its browser_wins verdicts are marked unproven.
 
+WHAT THIS CANNOT TELL YOU
+It narrows candidates; it does not confirm a catalogue. Counting distinct link
+targets removes navigation that repeats one href, but genre navigation has
+distinct targets too — piccoma.com/web/ranking scores 90 of them and every one
+is a genre filter, not a work. Structure alone cannot separate "many links" from
+"many items"; only looking at what is behind them can. Treat browser_wins as
+"worth a DOM recon", never as "collectable", and do that recon before writing a
+collector. Three of the five sources this ranked highest turned out to expose no
+catalogue at all.
+
 ROBOTS
 The page path is checked before any navigation and the browser is pinned to the
 source's own host. A disallowed path is skipped and recorded as skipped, never
@@ -113,14 +123,20 @@ JS_MEASURE = r"""
 	});
 	// The dominant `/segment/<id>` shape, not every link: navigation chrome
 	// otherwise reads as catalogue depth.
+	// DISTINCT hrefs per shape, not link count. Navigation repeats one target
+	// many times: goodnovel.com/rankings shows 51 links under /stories/* that are
+	// all the same locale switcher, while the actual catalogue is 20 links under
+	// /book/*. Counting raw links ranked the navigation first and made three
+	// sources look collectable that have no catalogue at all.
 	const shapes = {};
 	document.querySelectorAll('a[href]').forEach(a => {
 		let path;
 		try { path = new URL(a.href, location.href).pathname; } catch (e) { return; }
 		const m = path.match(/^\/([^/]+)\/[^/]+/);
-		if (m) shapes[m[1]] = (shapes[m[1]] || 0) + 1;
+		if (!m) return;
+		(shapes[m[1]] = shapes[m[1]] || new Set()).add(path);
 	});
-	out.item_links = Object.values(shapes).reduce((a, b) => Math.max(a, b), 0);
+	out.item_links = Object.values(shapes).reduce((n, s) => Math.max(n, s.size), 0);
 	// Not every catalogue puts the id in the path. Hacker News links items as
 	// `item?id=...`, and counting only path shapes scored its front page at 3
 	// links and called it empty — a control catching the metric, which is what
@@ -128,10 +144,10 @@ JS_MEASURE = r"""
 	const q = {};
 	document.querySelectorAll('a[href]').forEach(a => {
 		let u; try { u = new URL(a.href, location.href); } catch (e) { return; }
-		u.searchParams.forEach((v, k) => { if (/^\d+$/.test(v)) q[k] = (q[k] || 0) + 1; });
+		u.searchParams.forEach((v, k) => { if (/^\d+$/.test(v)) (q[k] = q[k] || new Set()).add(v); });
 	});
-	out.query_links = Object.values(q).reduce((a, b) => Math.max(a, b), 0);
-	out.total_links = document.querySelectorAll('a[href]').length;
+	out.query_links = Object.values(q).reduce((n, s) => Math.max(n, s.size), 0);
+	out.total_links = new Set([...document.querySelectorAll('a[href]')].map(a => a.getAttribute('href'))).size;
 	out.text_chars = (document.body ? (document.body.innerText || '') : '').length;
 	return JSON.stringify(out);
 })()
