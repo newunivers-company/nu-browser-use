@@ -207,14 +207,22 @@ def find_posix_shell() -> tuple[Path | None, str]:
 	if os.name != 'nt':
 		found = shutil.which('bash')
 		return (Path(found) if found else None), 'posix host'
+	# Known locations FIRST, PATH only as a fallback. Under Task Scheduler the
+	# working directory is C:\Windows\System32, and shutil.which() searches the
+	# current directory before PATH on Windows — so it returns the bare string
+	# 'bash.EXE', which is the WSL launcher sitting in that very directory. A
+	# substring test for 'system32' cannot see it, because the path has no
+	# directory part at all. Resolving first is what makes the check meaningful.
 	candidates = [
 		Path(r'C:\Program Files\Git\bin\bash.exe'),
 		Path(r'C:\Program Files\Git\usr\bin\bash.exe'),
 		Path(r'C:\Program Files (x86)\Git\bin\bash.exe'),
 	]
 	on_path = shutil.which('bash')
-	if on_path and 'system32' not in on_path.lower():
-		candidates.insert(0, Path(on_path))
+	if on_path:
+		resolved = Path(on_path).resolve()
+		if 'system32' not in str(resolved).lower():
+			candidates.append(resolved)
 	for candidate in candidates:
 		if candidate.exists():
 			return candidate, str(candidate)

@@ -34,7 +34,11 @@ if not exist "%PY%" (
 	exit /b 2
 )
 
-"%PY%" "%HERE%collect_cycle.py" %CADENCE% >> "%LOG%" 2>&1
+REM %* not %1: the log name keys off the cadence, but extra flags must reach the
+REM cycle. Without this there was no way to exercise this wrapper under Task
+REM Scheduler except by running a full live cadence, so the path that actually
+REM fires at 05:00 had never been tested end to end.
+"%PY%" "%HERE%collect_cycle.py" %* >> "%LOG%" 2>&1
 set "RC=%ERRORLEVEL%"
 echo ==== %DATE% %TIME% finished %CADENCE% rc=%RC% ==== >> "%LOG%"
 exit /b %RC%
