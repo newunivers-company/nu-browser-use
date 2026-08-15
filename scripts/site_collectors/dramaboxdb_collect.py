@@ -88,13 +88,15 @@ def clean_chapters(chapters: object) -> list[dict]:
 	for chapter in chapters:
 		if not isinstance(chapter, dict):
 			continue
-		out.append({
-			'index': chapter.get('index'),
-			'name': chapter.get('name'),
-			'duration_ms': chapter.get('duration'),
-			'price': chapter.get('chapterPrice'),
-			'updated': chapter.get('utime'),
-		})
+		out.append(
+			{
+				'index': chapter.get('index'),
+				'name': chapter.get('name'),
+				'duration_ms': chapter.get('duration'),
+				'price': chapter.get('chapterPrice'),
+				'updated': chapter.get('utime'),
+			}
+		)
 	assert all(field not in row for row in out for field in MEDIA_FIELDS), 'media URLs must never reach the output'
 	return out
 
@@ -123,7 +125,12 @@ def parse_book(props: dict, url: str) -> dict | None:
 		'median_duration_ms': sorted(durations)[len(durations) // 2] if durations else None,
 		'article_count': len(props.get('articleList') or []),
 		'recommends': [
-			{'book_id': str(r.get('bookId')), 'title': r.get('bookName'), 'slug': r.get('bookNameLower'), 'follow_count': r.get('followCount')}
+			{
+				'book_id': str(r.get('bookId')),
+				'title': r.get('bookName'),
+				'slug': r.get('bookNameLower'),
+				'follow_count': r.get('followCount'),
+			}
 			for r in (props.get('recommends') or [])
 			if isinstance(r, dict) and r.get('bookId')
 		],
@@ -168,31 +175,74 @@ def write_outputs(rows: list[dict], now: str) -> None:
 	with (OUT_DIR / 'recommendations.jsonl').open('w', encoding='utf-8') as handle:
 		for row in rows:
 			for rec in row['recommends']:
-				handle.write(json.dumps({
-					'from_id': row['book_id'], 'from_title': row['title'],
-					'to_id': rec['book_id'], 'to_title': rec['title'], 'to_follow_count': rec['follow_count'],
-					'observed_at': now,
-				}, ensure_ascii=False) + '\n')
+				handle.write(
+					json.dumps(
+						{
+							'from_id': row['book_id'],
+							'from_title': row['title'],
+							'to_id': rec['book_id'],
+							'to_title': rec['title'],
+							'to_follow_count': rec['follow_count'],
+							'observed_at': now,
+						},
+						ensure_ascii=False,
+					)
+					+ '\n'
+				)
 
 	with (OUT_DIR / 'observations.jsonl').open('a', encoding='utf-8') as handle:
 		for row in rows:
 			if row['view_count'] is None:
 				continue
-			handle.write(json.dumps({
-				'source': 'dramaboxdb.com', 'ranking_name': 'catalog_view_count', 'rank_type': 'VIEW_COUNT',
-				'entity_type': 'work', 'entity_id': row['book_id'], 'entity_title': row['title'],
-				'scope': {'type': 'platform', 'platform': 'dramabox'}, 'period': {'type': 'cumulative'},
-				'rank': None, 'raw_metric_name': 'viewCount', 'raw_score': row['view_count'],
-				'views': row['view_count'], 'follows': row['follow_count'],
-				# Basis differs from other sources by orders of magnitude; do not
-				# cross-compare without establishing what each platform counts.
-				'metric_basis': 'platform_reported_uncalibrated',
-				'platform': 'DramaBox', 'genres': [row['genre']] if row['genre'] else [],
-				'episodes': row['chapter_count'], 'published_at': row['first_shelf_time'],
-				'source_url': row['url'], 'observed_at': now,
-			}, ensure_ascii=False) + '\n')
+			handle.write(
+				json.dumps(
+					{
+						'source': 'dramaboxdb.com',
+						'ranking_name': 'catalog_view_count',
+						'rank_type': 'VIEW_COUNT',
+						'entity_type': 'work',
+						'entity_id': row['book_id'],
+						'entity_title': row['title'],
+						# Cumulative here, unlike GoodShort's viewCount which decays: over the
+						# first two days 874 of 894 titles rose, 2 fell, and both falls were
+						# ~0.1% (464,160 -> 463,682) — sharded-counter drift, not a window.
+						# A strict-monotonicity assertion downstream would still trip on it.
+						'scope': {'type': 'platform', 'platform': 'dramabox'},
+						'period': {'type': 'cumulative'},
+						'rank': None,
+						'raw_metric_name': 'viewCount',
+						'raw_score': row['view_count'],
+						'views': row['view_count'],
+						'follows': row['follow_count'],
+						# Basis differs from other sources by orders of magnitude; do not
+						# cross-compare without establishing what each platform counts.
+						'metric_basis': 'platform_reported_uncalibrated',
+						'platform': 'DramaBox',
+						'genres': [row['genre']] if row['genre'] else [],
+						'episodes': row['chapter_count'],
+						'published_at': row['first_shelf_time'],
+						'source_url': row['url'],
+						'observed_at': now,
+					},
+					ensure_ascii=False,
+				)
+				+ '\n'
+			)
 
-	columns = ['book_id', 'title', 'view_count', 'follow_count', 'chapter_count', 'genre', 'language', 'first_shelf_time', 'median_duration_ms', 'article_count', 'url', 'cover']
+	columns = [
+		'book_id',
+		'title',
+		'view_count',
+		'follow_count',
+		'chapter_count',
+		'genre',
+		'language',
+		'first_shelf_time',
+		'median_duration_ms',
+		'article_count',
+		'url',
+		'cover',
+	]
 	with (OUT_DIR / 'books.csv').open('w', newline='', encoding='utf-8-sig') as handle:
 		writer = csv.DictWriter(handle, fieldnames=columns, extrasaction='ignore')
 		writer.writeheader()

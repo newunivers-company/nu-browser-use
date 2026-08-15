@@ -15,6 +15,18 @@ engagement number, not a rank ordinal. That makes GoodShort one of the few
 sources exposing an absolute metric we can trend, comparable to duanju007's
 weekly view counts rather than to a rail position.
 
+VIEWCOUNT IS A LEVEL, NOT A CUMULATIVE COUNTER
+The first two days of the series settled this: of 1,356 titles present on both,
+245 rose and 97 fell — one from 41,467 to 18,822. A lifetime view total cannot
+fall, and these come from one canonical place per title, so this is not two
+listings disagreeing. Whatever GoodShort publishes here decays, which makes it a
+popularity level over some window they do not document.
+
+The distinction is not pedantry: read as cumulative, a fall is data corruption
+and a rise is "views added", and neither reading is true. Observations therefore
+declare period `windowed_undocumented` and `metric_monotonic: false`, so nothing
+downstream computes growth out of it by accident.
+
 robots.txt allows `/` for `*`; only /subscription, /results and /pay are
 disallowed, none of which we touch. No sitemap exists (404), so slugs come from
 a breadth-first walk of the tag and
@@ -45,7 +57,11 @@ import aiohttp
 
 BASE = 'https://www.goodshort.com'
 UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36'
-HEADERS = {'User-Agent': UA, 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'Accept-Language': 'en-US,en;q=0.9'}
+HEADERS = {
+	'User-Agent': UA,
+	'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+	'Accept-Language': 'en-US,en;q=0.9',
+}
 OUT_DIR = Path(os.environ.get('GOODSHORT_OUT', str(Path.home() / 'goodshort_export')))
 STATE_KEY = 'window.__INITIAL_STATE__='
 DRAMA_RE = re.compile(r'/drama/([a-z0-9][a-z0-9-]*-\d+)')
@@ -138,7 +154,9 @@ async def discover_slugs(session: aiohttp.ClientSession, page_budget: int) -> se
 			if candidate not in seen_pages:
 				frontier.append(candidate)
 		if len(slugs) != before:
-			print(f'  {path}: +{len(slugs) - before} (total {len(slugs)}, {len(seen_pages)}/{page_budget} pages, frontier {len(frontier)})')
+			print(
+				f'  {path}: +{len(slugs) - before} (total {len(slugs)}, {len(seen_pages)}/{page_budget} pages, frontier {len(frontier)})'
+			)
 	print(f'  walked {len(seen_pages)} listing pages')
 	return slugs
 
@@ -195,22 +213,52 @@ def write_outputs(rows: list[dict], now: str) -> None:
 			handle.write(
 				json.dumps(
 					{
-						'source': 'goodshort.com', 'ranking_name': 'catalog_view_count', 'rank_type': 'VIEW_COUNT',
-						'entity_type': 'work', 'entity_id': str(row['bookId']), 'entity_title': row.get('bookName'),
-						'scope': {'type': 'platform', 'platform': 'goodshort'}, 'period': {'type': 'cumulative'},
-						'rank': None, 'raw_metric_name': 'viewCount', 'raw_score': views, 'views': views,
+						'source': 'goodshort.com',
+						'ranking_name': 'catalog_view_count',
+						'rank_type': 'VIEW_COUNT',
+						'entity_type': 'work',
+						'entity_id': str(row['bookId']),
+						'entity_title': row.get('bookName'),
+						# Not cumulative: this metric falls as well as rises. See the
+						# module docstring for the measurement that established it.
+						'scope': {'type': 'platform', 'platform': 'goodshort'},
+						'period': {'type': 'windowed_undocumented'},
+						'metric_monotonic': False,
+						'rank': None,
+						'raw_metric_name': 'viewCount',
+						'raw_score': views,
+						'views': views,
 						'platform': 'GoodShort',
 						'genres': [g for g in row.get('genres', '').split(' | ') if g],
 						'tropes': [t for t in row.get('tropes', '').split(' | ') if t],
 						'episodes': row.get('chapterCount'),
-						'source_url': row['url'], 'observed_at': now,
+						'source_url': row['url'],
+						'observed_at': now,
 					},
 					ensure_ascii=False,
 				)
 				+ '\n'
 			)
 
-	preferred = ['bookId', 'bookName', 'slug', 'viewCount', 'likeCount', 'followCount', 'commentCount', 'inLibraryNum', 'ratings', 'chapterCount', 'genres', 'subgenres', 'tropes', 'pseudonym', 'writeStatus', 'lastChapterTime', 'url']
+	preferred = [
+		'bookId',
+		'bookName',
+		'slug',
+		'viewCount',
+		'likeCount',
+		'followCount',
+		'commentCount',
+		'inLibraryNum',
+		'ratings',
+		'chapterCount',
+		'genres',
+		'subgenres',
+		'tropes',
+		'pseudonym',
+		'writeStatus',
+		'lastChapterTime',
+		'url',
+	]
 	columns = preferred + sorted({key for row in rows for key in row} - set(preferred))
 	with (OUT_DIR / 'books.csv').open('w', newline='', encoding='utf-8-sig') as handle:
 		writer = csv.DictWriter(handle, fieldnames=columns, extrasaction='ignore')
@@ -241,7 +289,7 @@ async def main() -> None:
 	print(f'DONE -> {OUT_DIR}')
 	print(f'  books: {len(rows)}/{len(slugs)} | with viewCount: {len(with_views)}')
 	for row in sorted(with_views, key=lambda r: r['viewCount'], reverse=True)[:5]:
-		print(f"    {row['viewCount']:>10,}  {str(row.get('bookName'))[:52]}")
+		print(f'    {row["viewCount"]:>10,}  {str(row.get("bookName"))[:52]}')
 
 
 if __name__ == '__main__':
