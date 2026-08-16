@@ -96,7 +96,6 @@ WEEKLY: list[tuple[str, list[str], int]] = [
 	('verticaldrama', [str(HERE / 'verticaldrama_collect.py')], 15),
 	('duanju007', [str(HERE / 'duanju007_collect.py')], 15),
 	('vigloo_snapshot', [str(HERE / 'vigloo_snapshot.py')], 30),
-	('gdelt', [str(HERE / 'gdelt_collect.py')], 20),
 	('prompt_repos', [str(HERE / 'prompt_repo_collect.py')], 20),
 	# Browser-rendered listing, so weekly rather than daily: the cost is a real
 	# Chromium launch and the leaderboard does not turn over in a day.
@@ -128,6 +127,13 @@ WEEKLY: list[tuple[str, list[str], int]] = [
 #                           the recurring half)
 #   blocked on input        newtoki_watch — needs the rights-holder watchlist;
 #                           add it here the day that lands
+#   blocked by the source   gdelt_collect — has never returned a row. Every
+#                           snapshot on disk is an empty array, articles.csv was
+#                           never created, and a single isolated request answers
+#                           429 telling high-traffic users to switch to the
+#                           ngrams dataset. It reported `ok` regardless until it
+#                           was made to exit non-zero. Re-schedule when someone
+#                           has taken one of the paths GDELT names.
 #   recon, not collection   promo_recon, newtoki_calibrate, login_source_probe,
 #                           promo_browser_collect, browser_upgrade_review,
 #                           browser_render_probe — run by hand when a source's
@@ -163,6 +169,7 @@ UNSCHEDULED_BY_DESIGN = {
 	'munpia_collect.py',
 	'browser_upgrade_review.py',
 	'browser_render_probe.py',
+	'gdelt_collect.py',
 	'comfy_workflow_collect.py',
 	'fal_collect.py',
 	'vigloo_assets.py',
