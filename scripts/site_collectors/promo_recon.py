@@ -10,7 +10,8 @@ the page.
 Uses BrowserProfile's built-in `record_har_path` rather than wiring the CDP
 Network domain by hand (the pattern the older recon scripts in this directory
 use). The HarRecordingWatchdog captures request/response bodies and writes
-HAR 1.2 on shutdown, so recon is a profile flag instead of a script.
+HAR 1.2 on shutdown, so recon is a profile flag instead of a script. Those
+bodies are read for their shapes and then dropped — see prune_har_bodies.
 
 Run against ONE source at a time and read the report before writing its
 collector — the point is to look at each data source deliberately, not to
@@ -21,7 +22,8 @@ wander onto a T2 channel.
   python promo_recon.py flextv --paths / /genres --headful
 
 Output (PROMO_OUT, default ~/promo_export):
-  recon/<brand>/har.json        - full HAR capture
+  recon/<brand>/har.json        - HAR capture, response bodies stripped once
+                                  their shapes have been read into endpoints.json
   recon/<brand>/endpoints.json  - ranked JSON endpoints with payload shapes
 """
 
@@ -54,7 +56,23 @@ OUT_DIR = Path(os.environ.get('PROMO_OUT', str(Path.home() / 'promo_export')))
 SETTLE_SECONDS = 7.0
 NAV_TIMEOUT = 45.0
 # Asset traffic drowns the API calls we are looking for.
-ASSET_SUFFIXES = ('.js', '.css', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.woff', '.woff2', '.ttf', '.ico', '.mp4', '.m3u8', '.ts')
+ASSET_SUFFIXES = (
+	'.js',
+	'.css',
+	'.png',
+	'.jpg',
+	'.jpeg',
+	'.webp',
+	'.gif',
+	'.svg',
+	'.woff',
+	'.woff2',
+	'.ttf',
+	'.ico',
+	'.mp4',
+	'.m3u8',
+	'.ts',
+)
 SCROLL_JS = 'window.scrollTo(0, document.body.scrollHeight)'
 
 
@@ -69,7 +87,9 @@ def resolve(base: str, path: str) -> str:
 	if path.startswith(('http://', 'https://')):
 		return path
 	if not path.startswith('/'):
-		raise ValueError(f'path must start with / or be an http(s) URL, got {path!r} (MSYS path conversion? prefix the command with MSYS_NO_PATHCONV=1)')
+		raise ValueError(
+			f'path must start with / or be an http(s) URL, got {path!r} (MSYS path conversion? prefix the command with MSYS_NO_PATHCONV=1)'
+		)
 	return base + path
 
 
@@ -90,6 +110,42 @@ def json_shape(value: object, depth: int = 0) -> object:
 
 def har_entries(har: dict) -> list[dict]:
 	return har.get('log', {}).get('entries', [])
+
+
+def prune_har_bodies(har: dict, path: Path) -> None:
+	"""Rewrite the capture without the response bodies, once shapes are extracted.
+
+	`record_har_path` writes everything the browser saw, which for three sources
+	came to 21.8MB of which 19.2MB was third-party HTML, JavaScript, CSS and
+	base64 images. That is the same thing json_shape() above refuses to keep in
+	endpoints.json, sitting in the export dir and shipping to the NAS because it
+	arrived by a different route.
+
+	What recon needs survives: URL, method, status, mimeType and size per entry,
+	so the traffic shape is still readable. The bytes are dropped and the count
+	kept, because "how big was it" is a fact about the request and the content is
+	someone's page.
+
+	Ordering matters — summarize_endpoints() reads the bodies to infer payload
+	shapes, so this runs after endpoints.json is written, never before.
+	"""
+	stripped = 0
+	for entry in har_entries(har):
+		content = entry.get('response', {}).get('content')
+		if isinstance(content, dict) and content.get('text') is not None:
+			content['_body_chars'] = len(content['text'])
+			del content['text']
+			stripped += 1
+		post = entry.get('request', {}).get('postData')
+		if isinstance(post, dict) and post.get('text') is not None:
+			post['_body_chars'] = len(post['text'])
+			del post['text']
+	har.setdefault('log', {})['_pruned'] = {
+		'bodies_stripped': stripped,
+		'why': 'third-party response content is not collection metadata',
+	}
+	path.write_text(json.dumps(har, ensure_ascii=False), encoding='utf-8')
+	print(f'  har: {stripped} response bodies stripped, {path.stat().st_size / 1e6:.1f}MB kept')
 
 
 def interesting(entry: dict) -> bool:
@@ -128,22 +184,42 @@ def summarize_endpoints(har: dict) -> list[dict]:
 		content = response.get('content', {}) or {}
 		payload = decode_body(content)
 		parts = urlsplit(request.get('url', ''))
-		rows.append({
-			'method': request.get('method'),
-			'host': parts.netloc,
-			'path': parts.path,
-			'query_keys': sorted({kv.split('=')[0] for kv in parts.query.split('&') if kv}),
-			'status': response.get('status'),
-			'mime': content.get('mimeType'),
-			'bytes': content.get('size') or 0,
-			'post_data': (request.get('postData', {}) or {}).get('text', '')[:400] or None,
-			'request_headers': {
-				header['name']: header['value'][:80]
-				for header in request.get('headers', [])
-				if header['name'].lower() not in ('cookie', 'user-agent', 'accept-encoding', 'accept-language', 'referer', 'origin', 'sec-fetch-dest', 'sec-fetch-mode', 'sec-fetch-site', 'sec-ch-ua', 'sec-ch-ua-mobile', 'sec-ch-ua-platform', 'connection', 'host', 'content-length', 'accept')
-			},
-			'shape': json_shape(payload) if payload is not None else None,
-		})
+		rows.append(
+			{
+				'method': request.get('method'),
+				'host': parts.netloc,
+				'path': parts.path,
+				'query_keys': sorted({kv.split('=')[0] for kv in parts.query.split('&') if kv}),
+				'status': response.get('status'),
+				'mime': content.get('mimeType'),
+				'bytes': content.get('size') or 0,
+				'post_data': (request.get('postData', {}) or {}).get('text', '')[:400] or None,
+				'request_headers': {
+					header['name']: header['value'][:80]
+					for header in request.get('headers', [])
+					if header['name'].lower()
+					not in (
+						'cookie',
+						'user-agent',
+						'accept-encoding',
+						'accept-language',
+						'referer',
+						'origin',
+						'sec-fetch-dest',
+						'sec-fetch-mode',
+						'sec-fetch-site',
+						'sec-ch-ua',
+						'sec-ch-ua-mobile',
+						'sec-ch-ua-platform',
+						'connection',
+						'host',
+						'content-length',
+						'accept',
+					)
+				},
+				'shape': json_shape(payload) if payload is not None else None,
+			}
+		)
 	# Deduplicate by (method, path); keep the largest payload seen for each.
 	best: dict[tuple, dict] = {}
 	for row in rows:
@@ -176,7 +252,9 @@ async def recon(registry: PromotionRegistry, channel: Channel, paths: list[str],
 			for path in paths:
 				url = resolve(base, path)
 				try:
-					await asyncio.wait_for(session.event_bus.dispatch(NavigateToUrlEvent(url=url, new_tab=False)), timeout=NAV_TIMEOUT)
+					await asyncio.wait_for(
+						session.event_bus.dispatch(NavigateToUrlEvent(url=url, new_tab=False)), timeout=NAV_TIMEOUT
+					)
 					await asyncio.sleep(SETTLE_SECONDS)
 					cdp_session = await session.get_or_create_cdp_session()
 					for _ in range(scrolls):  # lazy-loaded rails only fire on scroll
@@ -207,6 +285,7 @@ async def recon(registry: PromotionRegistry, channel: Channel, paths: list[str],
 		'endpoints': endpoints,
 	}
 	(out_dir / 'endpoints.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
+	prune_har_bodies(har, har_path)
 	return report
 
 
@@ -230,12 +309,12 @@ async def main() -> None:
 
 	report = await recon(registry, channel, args.paths, headless=not args.headful, scrolls=args.scrolls)
 	endpoints = report.get('endpoints', [])
-	print(f"\n{report.get('total_requests', 0)} requests, {len(endpoints)} distinct JSON endpoints")
+	print(f'\n{report.get("total_requests", 0)} requests, {len(endpoints)} distinct JSON endpoints')
 	for row in endpoints[:15]:
 		keys = ','.join(row['query_keys'][:6])
-		print(f"  {row['bytes']:>9} B  {row['method']:4} {row['host']}{row['path'][:60]:60} [{keys}]")
+		print(f'  {row["bytes"]:>9} B  {row["method"]:4} {row["host"]}{row["path"][:60]:60} [{keys}]')
 	if endpoints:
-		print(f"\nfull shapes -> {OUT_DIR / 'recon' / (channel.brand or channel.host) / 'endpoints.json'}")
+		print(f'\nfull shapes -> {OUT_DIR / "recon" / (channel.brand or channel.host) / "endpoints.json"}')
 
 
 if __name__ == '__main__':
