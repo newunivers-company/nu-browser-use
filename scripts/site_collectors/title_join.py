@@ -165,7 +165,22 @@ SOURCES: dict[str, dict] = {
 }
 
 
+CATALOG_STATE = Path(os.environ.get('CATALOG_STATE_OUT', str(Path.home() / 'catalog_state_export')))
+
+
 def source_path(name: str, spec: dict, root: Path | None) -> Path:
+	"""Prefer the cumulative catalogue over the newest run's view.
+
+	A collector's books.json is what one walk reached, not what the platform
+	carries: across three days GoodShort's file held 1,383 then 1,434 then 1,284
+	titles, and 74 works were provably missed rather than delisted. Joining
+	against the newest file therefore dropped a different few hundred works every
+	day. catalog_state.py writes the union in the same record shape, so this is a
+	swap and not a rewrite — and it falls back when that file does not exist yet.
+	"""
+	cumulative = CATALOG_STATE / f'{name}_catalog.json'
+	if root is None and cumulative.exists():
+		return cumulative
 	if root is not None:
 		return root / spec['default'] / spec['file']
 	return Path(os.environ.get(spec['env'], str(Path.home() / spec['default']))) / spec['file']

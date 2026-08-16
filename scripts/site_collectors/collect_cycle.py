@@ -75,6 +75,11 @@ DAILY: list[tuple[str, list[str], int]] = [
 	# rank at all. Contrast dramabox_rails, moved the other way for the opposite
 	# reason: its numbers are fixed at build time.
 	('browser_boards', [str(HERE / 'browser_catalog_collect.py')], 35),
+	# Local-only and seconds long: folds today's snapshot into the cumulative
+	# catalogue so "known" and "seen by the latest walk" stay distinguishable.
+	# Runs last in the daily cadence because it reads what the collectors above
+	# just wrote.
+	('catalog_state', [str(HERE / 'catalog_state.py')], 10),
 ]
 
 WEEKLY: list[tuple[str, list[str], int]] = [
@@ -105,7 +110,9 @@ WEEKLY: list[tuple[str, list[str], int]] = [
 	# rather than daily because a download pass over unchanged titles is pure
 	# cost — the collector skips what is already on disk.
 	('catalog_posters', [str(HERE / 'catalog_posters.py')], 45),
-	# Analysis runs after the catalogues it reads, never before.
+	# Analysis runs after the catalogues it reads, never before — and title_join
+	# now reads the cumulative catalogue, so this has to refresh it first.
+	('catalog_state', [str(HERE / 'catalog_state.py')], 10),
 	('title_join', [str(HERE / 'title_join.py')], 10),
 	('trope_rank', [str(HERE / 'trope_rank.py')], 10),
 ]
