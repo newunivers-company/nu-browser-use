@@ -21,10 +21,16 @@ title absent on one day and present both before and after cannot have been
 delisted and relisted; it was missed. That count is reported per source as
 `flapped`, and it is the evidence that the shortfall is sampling.
 
-The converse needs more history than three runs. A work missed only on the newest
-run has no sighting after the gap, so it cannot flap yet whether it was delisted
-or merely skipped; it is counted as `absent_unclassified` and the summary says so
-rather than calling it a departure.
+The converse is decided by where the gap sits, not by how long the history is. A
+work absent only from the newest run has no sighting after the gap, so a miss and
+a departure look identical no matter how many runs precede it — that set is
+`absent_one_run_unclassified` and it stays unclassified permanently, not until
+some run count is reached. Absence across two or more consecutive runs is
+`candidate_departures`: weak evidence, since these walks demonstrably miss the
+same work twice, but evidence.
+
+Keying this off history length instead was wrong and briefly declared 268
+GoodShort works interpretable that had simply been missed by the latest walk.
 
 A DATE HERE IS THE SNAPSHOT DIRECTORY'S DATE
 Collectors name snapshot directories with the local date and stamp observations
@@ -155,14 +161,22 @@ def build(source: str, spec: tuple, root: Path) -> tuple[list[dict], dict]:
 			row['flapped'] = True
 	last_date = dates[-1]
 	gone = [r for r in rows if r['last_seen'] != last_date]
-	gone_and_stayed = [r for r in gone if not r.get('flapped')]
 
-	# A work seen on the first two of three days and missed on the third cannot
-	# flap — flapping needs a sighting on both sides of the gap. So with a short
-	# history `gone_and_never_flapped` is not a count of departures, it is a count
-	# of works the evidence cannot yet classify, and reporting it as departures
-	# would be exactly the kind of confident wrong number this file exists to stop.
-	interpretable = len(dates) >= 4
+	# How many runs in a row, counting back from the newest, has this work been
+	# absent from? That is the axis that decides interpretability, not the length
+	# of the history: a work missed only by the newest run has no sighting after
+	# the gap and cannot be told from a departure however many runs precede it.
+	# Two consecutive misses is weak evidence of a departure; one is none at all.
+	for row in rows:
+		last_index = index[row['last_seen']]
+		row['tail_absent'] = len(dates) - 1 - last_index
+	unclassified = [r for r in gone if r['tail_absent'] == 1]
+	candidate_departures = [r for r in gone if r['tail_absent'] >= 2]
+
+	# Earlier this keyed off the length of the history, which was the wrong axis:
+	# at four runs it declared 268 GoodShort works interpretable when most of them
+	# had simply been missed by the newest walk. The gap's position is what
+	# matters, not how much history sits behind it.
 	summary = {
 		'source': source,
 		'dates': dates,
@@ -171,8 +185,8 @@ def build(source: str, spec: tuple, root: Path) -> tuple[list[dict], dict]:
 		'seen_every_day': sum(1 for r in rows if r['times_seen'] == len(dates)),
 		'flapped': flapped,
 		'missing_from_latest': len(gone),
-		'absent_unclassified': len(gone_and_stayed),
-		'departures_interpretable': interpretable,
+		'absent_one_run_unclassified': len(unclassified),
+		'candidate_departures': len(candidate_departures),
 		'latest_coverage': round(len(days[last_date]) / len(rows), 3) if rows else None,
 	}
 	return rows, summary, union_records
@@ -202,8 +216,9 @@ def main() -> int:
 		print(
 			f'{source:12} union={summary["union"]:>6,}  latest run saw {summary["per_day"][latest]:>6,} '
 			f'({summary["latest_coverage"]:.0%})  every-day={summary["seen_every_day"]:>6,}  '
-			f'flapped={summary["flapped"]:>4}  absent={summary["absent_unclassified"]:>4}'
-			+ ('' if summary['departures_interpretable'] else '  (unclassified — needs 4+ runs)')
+			f'flapped={summary["flapped"]:>4}  '
+			f'missed-once={summary["absent_one_run_unclassified"]:>4}  '
+			f'gone-2+runs={summary["candidate_departures"]:>4}'
 		)
 
 	(OUT_DIR / 'summary.json').write_text(
@@ -219,13 +234,17 @@ def main() -> int:
 			f'\n{total_flap:,} works flapped — absent from a run that has sightings on both sides. '
 			'That is proof the shortfall is sampling, not delisting.'
 		)
-		short = [s['source'] for s in usable if not s['departures_interpretable']]
-		if short:
-			print(
-				f'  The `absent` column is NOT a departure count at {len(usable[0]["dates"])} runs: a work missed '
-				'only on the newest run has no sighting after the gap, so it cannot flap yet and stays '
-				f'unclassified. Four or more runs separate the two. ({", ".join(short)})'
-			)
+		missed_once = sum(s['absent_one_run_unclassified'] for s in usable)
+		departures = sum(s['candidate_departures'] for s in usable)
+		print(
+			f'  missed-once={missed_once:,} is unclassifiable by construction — absent from the newest run only, '
+			'so there is no sighting after the gap to tell a miss from a departure.'
+		)
+		print(
+			f'  gone-2+runs={departures:,} have been absent from two or more consecutive runs. That is the '
+			'candidate-departure set, and it is weak evidence rather than a delisting log: these walks miss '
+			'the same work twice often enough that a third absence is worth waiting for.'
+		)
 	print(f'DONE -> {OUT_DIR}')
 	return 0
 
