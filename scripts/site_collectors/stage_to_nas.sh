@@ -57,16 +57,23 @@ only=("$@")
 # actually declare — the previous hand-maintained version silently dropped
 # twelve directories before anyone noticed.
 #
-# newtoki_market is deliberately absent. It holds a parallel session's
-# enumeration of a piracy site's listings, which contradicts the "no listing
-# enumeration, no index building" guardrail in newtoki_watch.py. Staging it
-# would push that inventory onto shared storage, so it stays local until a
-# human settles the conflict.
+# newtoki_market IS staged, as of 2026-08-16. The earlier exclusion rested on a
+# reading of newtoki_watch.py's guardrail that turned out to be wrong — that line
+# binds that module, and docs/collection-policy.md now covers supply observation
+# as its own mandate. The real concern was never stage 2 but stage 3: the records
+# are `id + title` and the site resolves `<host>/<section>/<id>`, so the dataset
+# doubles as an index of infringing works, and syncing it to Google Drive is a
+# different act from holding it on the NAS.
+#
+# That boundary is marked by _DO-NOT-SYNC-TO-DRIVE.md inside the directory, which
+# stages along with the data. It is not enforced in code: the stage-3 script
+# (sync_all.ps1) is not present in this repo, on the NAS, or in $HOME, so nothing
+# here can refuse on its behalf.
 mapfile -t candidates < <(
 	find "$HOME_ROOT" -maxdepth 1 -mindepth 1 -type d \
 		\( -name '*_export' \
 		   -o -name 'source_loop' -o -name 'source_harvest' -o -name 'source_review' \
-		   -o -name 'newtoki_watch' -o -name 'catalog_posters' \
+		   -o -name 'newtoki_watch' -o -name 'newtoki_market' -o -name 'catalog_posters' \
 		   -o -name 'trope_rank' -o -name 'collect_cycle' \) \
 		-printf '%f\n' 2>/dev/null | sort
 )

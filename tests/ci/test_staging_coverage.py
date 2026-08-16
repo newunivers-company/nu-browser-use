@@ -28,18 +28,21 @@ from scripts.site_collectors import collect_cycle
 COLLECTORS_DIR = Path(__file__).resolve().parents[2] / 'scripts' / 'site_collectors'
 STAGE_SCRIPT = COLLECTORS_DIR / 'stage_to_nas.sh'
 
-# Output dirs deliberately kept off shared storage, with the reason.
-EXCLUDED = {
-	# Piracy-supply inventory. The earlier reason given here — that it broke
-	# newtoki_watch.py's guardrail — was wrong: that guardrail binds that module,
-	# and docs/collection-policy.md now covers supply intelligence as its own
-	# mandate. The real reason is narrower and survives the correction. Records
-	# are `id + title`, and the site resolves `<host>/<section>/<id>`, so the
-	# dataset doubles as a working index of infringing material. Holding that
-	# locally and pushing it to shared storage that syncs onward to Google Drive
-	# are different acts, and the second is a human's call.
-	'newtoki_market': 'resolvable index of infringing works; stage-3 distribution undecided',
-}
+# Output dirs deliberately kept off the NAS, with the reason. Empty as of
+# 2026-08-16: newtoki_market was the only entry and it now stages, because the
+# line that mattered turned out to be stage 3, not stage 2.
+EXCLUDED: dict[str, str] = {}
+
+# Staged to the NAS but must not continue to Google Drive. The records are
+# `id + title` and the site resolves `<host>/<section>/<id>`, so the dataset is
+# also a working index of infringing works: holding it on internal storage is
+# observation, syncing it to external cloud storage is closer to distribution.
+#
+# Marked, not enforced. The stage-3 script docs/collection-policy.md names
+# (sync_all.ps1) is not in this repo, on the NAS, or in $HOME, so nothing here
+# can refuse on its behalf. The marker file is the entire mechanism, which is
+# why it gets a test.
+NO_DRIVE_SYNC = {'newtoki_market': '_DO-NOT-SYNC-TO-DRIVE.md'}
 
 HOME_DIR_RE = re.compile(r"Path\.home\(\)\s*/\s*'([A-Za-z0-9_]+)'")
 NAME_TOKEN_RE = re.compile(r"-name\s+'([^']+)'")
@@ -152,3 +155,30 @@ def test_collection_loop_permits_only_unrestricted_robots_verdicts():
 			f'the collection loop would walk sources whose robots verdict is {forbidden!r}; docs/collection-policy.md forbids it'
 		)
 	assert permitted == {'allow', 'unknown'}, f'unexpected PERMITTED_ROBOTS: {permitted}'
+
+
+# --- NAS yes, Drive no -------------------------------------------------------
+
+
+def test_no_drive_sync_dirs_are_actually_staged_to_the_nas():
+	"""The point is NAS-and-stop, not exclusion; the staging script must include them."""
+	patterns = staging_patterns()
+	for name in NO_DRIVE_SYNC:
+		assert matches_staging(name, patterns), f'{name} is meant to reach the NAS but stage_to_nas.sh skips it'
+		assert name not in EXCLUDED, f'{name} cannot be both staged and excluded'
+
+
+def test_no_drive_sync_dirs_carry_their_marker():
+	"""The marker is the only thing standing between this data and Google Drive.
+
+	No script enforces stage 3 — sync_all.ps1 is not present anywhere reachable —
+	so if the file goes missing the boundary goes with it silently.
+	"""
+	for name, marker in NO_DRIVE_SYNC.items():
+		directory = Path.home() / name
+		if not directory.exists():
+			pytest.skip(f'{name} not present on this machine')
+		path = directory / marker
+		assert path.exists(), f'{name} is staged to the NAS with no {marker} telling stage 3 to skip it'
+		text = path.read_text(encoding='utf-8')
+		assert len(text) > 200, f'{marker} must explain the decision, not just exist'
