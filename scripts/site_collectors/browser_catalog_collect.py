@@ -148,6 +148,11 @@ JS_EXTRACT = r"""
 			label: (text && text !== title) ? text.slice(0, 160) : null,
 			rank: rank || seen.size + 1,
 			rank_from: rank ? 'card' : 'dom_order',
+			dom_position: seen.size + 1,
+			// kuaikan stamps the movement it displays itself ("上升4名"). The
+			// card number has been observed frozen across days while the DOM
+			// order moves — this is the site's own velocity signal, so keep it.
+			rise: (text.match(/上升\s*(\d+)\s*名/) || [])[1] || null,
 		});
 	});
 	return JSON.stringify([...seen.values()]);
