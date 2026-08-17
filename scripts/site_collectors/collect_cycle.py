@@ -67,6 +67,10 @@ DAILY: list[tuple[str, list[str], int]] = [
 	('mydrama', [str(HERE / 'mydrama_collect.py')], 20),
 	('reelshort', [str(HERE / 'reelshort_collect.py'), '--no-posters'], 30),
 	('netshort', [str(HERE / 'netshort_collect.py')], 20),
+	# Munpia rails are a daily ranking surface with per-novel view/preference/
+	# like counts — the Korean web-novel counterpart to the goodnovel boards.
+	# Keyless JSON API, no browser, ~2 minutes for 12 genre rails + details.
+	('munpia', [str(HERE / 'munpia_collect.py')], 15),
 	# Daily despite costing two Chromium launches, unlike the other browser steps
 	# which sit in the weekly cadence. These are ordered ranking boards and the
 	# cards state their own movement ("上升6名" — up six places), so the thing
@@ -75,6 +79,9 @@ DAILY: list[tuple[str, list[str], int]] = [
 	# rank at all. Contrast dramabox_rails, moved the other way for the opposite
 	# reason: its numbers are fixed at build time.
 	('browser_boards', [str(HERE / 'browser_catalog_collect.py')], 35),
+	# Reads the two board snapshots the step above just wrote; local-only and
+	# seconds long. Day-over-day movement is the reason browser_boards is daily.
+	('board_movement', [str(HERE / 'board_movement.py')], 10),
 	# Local-only and seconds long: folds today's snapshot into the cumulative
 	# catalogue so "known" and "seen by the latest walk" stay distinguishable.
 	# Runs last in the daily cadence because it reads what the collectors above
@@ -166,7 +173,6 @@ UNSCHEDULED_BY_DESIGN = {
 	'newtoki_calibrate.py',
 	'login_source_probe.py',
 	'promo_browser_collect.py',
-	'munpia_collect.py',
 	'browser_upgrade_review.py',
 	'browser_render_probe.py',
 	'gdelt_collect.py',
