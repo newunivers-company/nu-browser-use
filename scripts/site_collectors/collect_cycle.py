@@ -62,7 +62,7 @@ DAILY: list[tuple[str, list[str], int]] = [
 	# Downloads are a monotonic counter, so the daily delta is the adoption
 	# signal — the same shape as app-store rating counts.
 	('huggingface', [str(HERE / 'huggingface_hub_collect.py')], 25),
-	('goodshort', [str(HERE / 'goodshort_collect.py'), '--pages', '220'], 45),
+	('goodshort', [str(HERE / 'goodshort_collect.py'), '--pages', '220', '--seed-from-union'], 45),
 	('dramaboxdb', [str(HERE / 'dramaboxdb_collect.py'), '--expand', '3', '--max-titles', '2500'], 45),
 	('mydrama', [str(HERE / 'mydrama_collect.py')], 20),
 	('reelshort', [str(HERE / 'reelshort_collect.py'), '--no-posters'], 30),
@@ -102,6 +102,10 @@ WEEKLY: list[tuple[str, list[str], int]] = [
 	('corpsites', [str(HERE / 'corpsite_watch.py')], 15),
 	('verticaldrama', [str(HERE / 'verticaldrama_collect.py')], 15),
 	('duanju007', [str(HERE / 'duanju007_collect.py')], 15),
+	# Home rails and rank positions turn over slowly, and the reads/writes are
+	# absolute counters on detail pages — weekly deltas are the usable signal,
+	# and the same rail repeated daily would add rows without information.
+	('fanqie', [str(HERE / 'fanqie_collect.py')], 20),
 	('vigloo_snapshot', [str(HERE / 'vigloo_snapshot.py')], 30),
 	('prompt_repos', [str(HERE / 'prompt_repo_collect.py')], 20),
 	# Browser-rendered listing, so weekly rather than daily: the cost is a real

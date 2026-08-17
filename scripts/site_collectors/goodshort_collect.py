@@ -270,12 +270,37 @@ async def main() -> None:
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--pages', type=int, default=60, help='listing-page budget for the breadth-first walk')
 	parser.add_argument('--limit', type=int, help='cap detail fetches (smoke tests)')
+	parser.add_argument(
+		'--seed-from-union',
+		action='store_true',
+		help='also fetch details for works in the cumulative union (catalog_state) that the walk missed',
+	)
 	args = parser.parse_args()
 
 	now = dt.datetime.now(dt.timezone.utc).isoformat()
 	async with aiohttp.ClientSession(headers=HEADERS) as session:
 		print('[1/2] discovering slugs')
 		slugs = sorted(await discover_slugs(session, args.pages))
+		if args.seed_from_union:
+			# The walk demonstrably misses the same works for days (catalog_state
+			# `flapped`), and every known work already has a slug in the union.
+			# Seeding the detail pass from the union turns "what the walk saw"
+			# into "everything known", without spending listing-page budget.
+			union_path = Path.home() / 'catalog_state_export' / 'goodshort_catalog.json'
+			alt = Path(os.environ.get('CATALOG_STATE_OUT', '' )) / 'goodshort_catalog.json' if os.environ.get('CATALOG_STATE_OUT') else None
+			for candidate in (alt, Path('/mnt/c/Users/USER/catalog_state_export/goodshort_catalog.json'), union_path):
+				if candidate and candidate.exists():
+					union_path = candidate
+					break
+			if union_path.exists():
+				union = json.load(open(union_path, encoding='utf-8'))
+				union_slugs = {r.get('bookResourceUrl') or r.get('slug') for r in union if isinstance(r, dict)}
+				union_slugs.discard(None)
+				extra = sorted(union_slugs - set(slugs))
+				print(f'      union seed: +{len(extra)} slugs the walk did not reach')
+				slugs = sorted(set(slugs) | set(extra))
+			else:
+				print('      union catalog not found; walk slugs only')
 		if args.limit:
 			slugs = slugs[: args.limit]
 		print(f'      {len(slugs)} slugs')
