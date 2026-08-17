@@ -67,6 +67,8 @@ SOURCES: dict[str, tuple[str, str, str, str, str | None]] = {
 	'mydrama': ('mydrama_export', 'series.json', 'series_id', 'title', 'rating_count'),
 	'shortmax': ('shortmax_export', 'dramas.json', 'drama_id', 'title', 'plays'),
 	'flextv': ('flextv_export', 'dramas.json', 'drama_id', 'title', 'views'),
+	'netshort': ('netshort_export', 'dramas.json', 'dramaId', 'title', None),
+	'reelshort': ('reelshort_export', 'books.json', 'book_id', 'book_title', 'read_count'),
 }
 
 

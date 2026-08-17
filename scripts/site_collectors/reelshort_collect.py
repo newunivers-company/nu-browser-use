@@ -172,6 +172,14 @@ def write_outputs(rails: list[dict], books: dict[str, dict]) -> None:
 	records = list(books.values())
 	(OUT_DIR / 'books.json').write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding='utf-8')
 
+	# Dated snapshot for catalog_state: the union tool keys on the local-day
+	# directory name, same convention as every other collector. books.json stays
+	# the latest run's view; this copy is what makes reelshort part of the
+	# time series. A day written here cannot be backfilled later.
+	snap_dir = OUT_DIR / 'snapshots' / dt.date.today().isoformat()
+	snap_dir.mkdir(parents=True, exist_ok=True)
+	(snap_dir / 'books.json').write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding='utf-8')
+
 	# Rail-ordinal ranking observations, RankingObservation-style.
 	observations = [
 		{

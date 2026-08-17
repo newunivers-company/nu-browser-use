@@ -22,6 +22,7 @@ import argparse
 import asyncio
 import csv
 import json
+from datetime import date
 import os
 import re
 import xml.etree.ElementTree as ET
@@ -124,6 +125,13 @@ async def main() -> None:
 
 		print('[3/3] writing outputs', flush=True)
 		(OUT_DIR / 'dramas.json').write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding='utf-8')
+
+		# Dated snapshot for catalog_state (same local-day-directory convention).
+		# dramas.json stays the latest run's view; this is what puts netshort's
+		# 50k+ catalog into the time series. Not backfillable — write every run.
+		snap_dir = OUT_DIR / 'snapshots' / date.today().isoformat()
+		snap_dir.mkdir(parents=True, exist_ok=True)
+		(snap_dir / 'dramas.json').write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding='utf-8')
 		with (OUT_DIR / 'dramas.csv').open('w', newline='', encoding='utf-8-sig') as h:
 			w = csv.writer(h)
 			w.writerow(['dramaId', 'title', 'episodeCount', 'episodesSeen', 'url'])
