@@ -202,6 +202,7 @@ markers = [
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
     "asyncio: mark tests as async tests",
+    "real_llm_defaults: asserts which LLM the agent picks by default, so no keyless override may be injected",
 ]
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]

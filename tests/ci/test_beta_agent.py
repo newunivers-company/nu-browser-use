@@ -19,6 +19,32 @@ def _ripgrep_fixture_name() -> str:
 
 
 @pytest.fixture(autouse=True)
+def _keyless_llm_runtime_available(request, monkeypatch):
+	"""Give beta.Agent a keyless LLM to resolve, where the host has none.
+
+	beta.Agent resolves a keyless runtime at construction for every
+	terminal/rust-path test in this file — 60 of them fail without one. A
+	developer machine has a signed-in Codex/Claude/Grok CLI, so this is a no-op
+	there; a CI runner has no CLI and no API key, and the first such test died
+	with `ValueError: No keyless LLM runtime is available`, taking the job with
+	it. Naming a local model is the alternative resolve_runtime_llm() suggests
+	in that very error, and it costs no network call.
+
+	Tests marked `real_llm_defaults` are exempt: KEYLESS_LLM_MODEL outranks the
+	browser-use default in the AUTO branch, so injecting it would rewrite the
+	very answer those tests exist to check ('ollama' != 'browser-use').
+	"""
+	if request.node.get_closest_marker('real_llm_defaults'):
+		return
+	from browser_use.runtime import resolve_runtime_llm
+
+	try:
+		resolve_runtime_llm()
+	except ValueError:
+		monkeypatch.setenv('KEYLESS_LLM_MODEL', 'qwen3:0.6b')
+
+
+@pytest.fixture(autouse=True)
 def _disable_beta_agent_latest_version_check(monkeypatch):
 	import browser_use.beta.service as beta_service
 
@@ -28,25 +54,6 @@ def _disable_beta_agent_latest_version_check(monkeypatch):
 	monkeypatch.setattr(beta_service, 'check_latest_browser_use_version', no_latest_version)
 	monkeypatch.delenv('DEFAULT_LLM', raising=False)
 	monkeypatch.setenv('BROWSER_USE_API_KEY', 'test-browser-use-api-key')
-
-	# beta.Agent resolves a keyless LLM at construction, so the tests below that
-	# build one — to read back _run_env() or the translated cdp headers, never to
-	# call a model — need *some* runtime to resolve. A developer machine has a
-	# signed-in Codex/Claude/Grok CLI and this is a no-op; a CI runner has neither
-	# a CLI nor any API key, and the constructor raised
-	#   ValueError: No keyless LLM runtime is available
-	# on the first such test in the file. Naming a local model is the documented
-	# alternative and satisfies resolution without a network call.
-	#
-	# Conditional rather than unconditional: KEYLESS_LLM_MODEL outranks an
-	# auto-detected CLI in resolve_runtime_llm's AUTO branch, so setting it always
-	# would quietly move every developer's runs onto a backend they do not use.
-	from browser_use.runtime import resolve_runtime_llm
-
-	try:
-		resolve_runtime_llm()
-	except ValueError:
-		monkeypatch.setenv('KEYLESS_LLM_MODEL', 'qwen3:0.6b')
 
 
 def test_top_level_agent_preserves_python_service():
@@ -4482,6 +4489,7 @@ def test_beta_agent_defaults_page_extraction_llm_to_main_llm():
 	assert str(id(extraction_llm)) in override_agent.token_cost_service.registered_llms
 
 
+@pytest.mark.real_llm_defaults
 def test_beta_agent_default_llm_matches_browser_use_default(monkeypatch):
 	from browser_use.agent.service import _PythonAgent as BrowserUseAgent
 	from browser_use.beta import Agent as BetaAgent
@@ -5692,6 +5700,7 @@ def test_beta_agent_adds_available_files_to_task_context():
 	assert '- ' in agent.task and 'notes.md' in agent.task
 
 
+@pytest.mark.real_llm_defaults
 def test_beta_agent_default_model_uses_browser_use_default_llm(monkeypatch):
 	from browser_use.agent.service import _PythonAgent as BrowserUseAgent
 	from browser_use.beta import Agent
