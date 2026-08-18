@@ -102,10 +102,10 @@ def main() -> None:
 	}
 	(JOIN_OUT / 'platform_strength.json').write_text(json.dumps(summary, ensure_ascii=False, indent=1), encoding='utf-8')
 
-	print(f"works compared: {summary['works_compared']}")
+	print(f'works compared: {summary["works_compared"]}')
 	print('win shares:', summary['win_shares'])
 	for pair, stats in sorted(pairs.items(), key=lambda kv: -kv[1]['n'])[:6]:
-		print(f"  {pair}: n={stats['n']} median={stats['median_ratio']}")
+		print(f'  {pair}: n={stats["n"]} median={stats["median_ratio"]}')
 
 
 if __name__ == '__main__':

@@ -82,6 +82,11 @@ DAILY: list[tuple[str, list[str], int]] = [
 	# Reads the two board snapshots the step above just wrote; local-only and
 	# seconds long. Day-over-day movement is the reason browser_boards is daily.
 	('board_movement', [str(HERE / 'board_movement.py')], 10),
+	# The other half of the movement story: absolute view deltas rather than
+	# ordinal ones. Reads the goodshort daily snapshots the step above wrote, so
+	# it can only be daily — a weekly run would compare two days a week apart and
+	# call the gap velocity. Local-only, seconds long.
+	('velocity', [str(HERE / 'velocity_report.py')], 10),
 	# Local-only and seconds long: folds today's snapshot into the cumulative
 	# catalogue so "known" and "seen by the latest walk" stay distinguishable.
 	# Runs last in the daily cadence because it reads what the collectors above
@@ -123,8 +128,26 @@ WEEKLY: list[tuple[str, list[str], int]] = [
 	# Analysis runs after the catalogues it reads, never before — and title_join
 	# now reads the cumulative catalogue, so this has to refresh it first.
 	('catalog_state', [str(HERE / 'catalog_state.py')], 10),
+	# Before title_join, because it raises that join's ceiling: the Chinese
+	# ranking source speaks zh and everything else speaks en, so the 84
+	# multi-source titles were a language limit, not a data limit. Expensive —
+	# 3,339 slugs x 2 language pages, serial with a 1.2s gap and a 20s pause
+	# every 60, so ~2.5h by construction rather than by slowness. The obvious
+	# optimisation is skipping slugs already in title_bridge.json; until that
+	# exists this gets a source_loop-sized budget.
+	('shortdramacast', [str(HERE / 'shortdramacast_map.py')], 180),
 	('title_join', [str(HERE / 'title_join.py')], 10),
 	('trope_rank', [str(HERE / 'trope_rank.py')], 10),
+	# Read whatever the join produced; local-only and seconds long. Order is a
+	# dependency chain, not a preference — cross_platform reads multi_platform.csv
+	# and nu_rank reads both the observations and the bridge above.
+	('cross_platform', [str(HERE / 'cross_platform_performance.py')], 10),
+	('nu_rank', [str(HERE / 'nu_rank.py')], 10),
+	# Pure local analysis over the five China exports another operation writes to
+	# the same NAS share. Weekly because we do not control their cadence and a
+	# daily re-render of unchanged inputs is only noise; it now resolves the NAS
+	# root instead of assuming the WSL mount, so an unreachable share is loud.
+	('china_dashboard', [str(HERE / 'china_dashboard.py'), '--write'], 10),
 ]
 
 # Deliberately NOT scheduled, so an omission reads as a decision rather than an
@@ -155,6 +178,16 @@ WEEKLY: list[tuple[str, list[str], int]] = [
 #   one-shot asset pulls    vigloo_assets, vigloo_episode_thumbs — posters and
 #                           episode stills are fetched once and cached; re-running
 #                           re-downloads images for no new signal
+#   operator-supplied list  instagram_post_collect — reads only the post URLs it
+#                           is handed, so there is no standing target set to run
+#                           against. Scheduling it would mean either an empty run
+#                           or a stored list that grows, and a list that grows is
+#                           the profile walk docs/collection-policy.md's
+#                           「지정 URL 참조 영상」 section rules out.
+#   rights-protection prep  build_watchlist — produces the watchlist file
+#                           newtoki_watch consumes. Scheduling the producer while
+#                           the consumer stays unscheduled buys nothing; the two
+#                           move together the day the watchlist lands.
 #   on-demand rights work   newtoki_market_intel, newtoki_work_meta — piracy
 #                           supply observation, now covered by the
 #                           권리보호·침해 유통 관측 section of
@@ -186,6 +219,8 @@ UNSCHEDULED_BY_DESIGN = {
 	'vigloo_episode_thumbs.py',
 	'newtoki_market_intel.py',
 	'newtoki_work_meta.py',
+	'instagram_post_collect.py',
+	'build_watchlist.py',
 }
 
 
