@@ -254,6 +254,11 @@ async def main() -> None:
 	parser.add_argument('--expand', type=int, default=2, help='rounds of recommendation-rail expansion')
 	parser.add_argument('--max-titles', type=int, default=600)
 	parser.add_argument('--limit', type=int, help='cap fetches (smoke tests)')
+	parser.add_argument(
+		'--seed-from-union',
+		action='store_true',
+		help='also fetch details for works in the cumulative union (catalog_state) that the frontier missed',
+	)
 	args = parser.parse_args()
 
 	now = dt.datetime.now(dt.timezone.utc).isoformat()
@@ -261,6 +266,28 @@ async def main() -> None:
 	async with aiohttp.ClientSession(headers=HEADERS) as session:
 		print('[1/2] seeding from home + genre listings')
 		frontier = await seed_frontier(session)
+		if args.seed_from_union:
+			# Same rationale as goodshort: the frontier walk misses the same works
+			# for days (flapped=182), and the union already knows every slug.
+			union_path = Path.home() / 'catalog_state_export' / 'dramaboxdb_catalog.json'
+			alt = Path(os.environ.get('CATALOG_STATE_OUT', '')) / 'dramaboxdb_catalog.json' if os.environ.get('CATALOG_STATE_OUT') else None
+			for candidate in (alt, Path('/mnt/c/Users/USER/catalog_state_export/dramaboxdb_catalog.json'), union_path):
+				if candidate and candidate.exists():
+					union_path = candidate
+					break
+			if union_path.exists():
+				union = json.load(open(union_path, encoding='utf-8'))
+				extra = 0
+				for r in union:
+					if not isinstance(r, dict):
+						continue
+					bid, slug = str(r.get('book_id') or r.get('bookId') or ''), r.get('slug') or r.get('bookNameLower') or ''
+					if bid and slug and bid not in frontier:
+						frontier[bid] = slug
+						extra += 1
+				print(f'  union seed: +{extra} slugs the frontier did not reach')
+			else:
+				print('  union catalog not found; frontier slugs only')
 		if args.limit:
 			frontier = dict(list(frontier.items())[: args.limit])
 

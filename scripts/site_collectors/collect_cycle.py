@@ -63,7 +63,7 @@ DAILY: list[tuple[str, list[str], int]] = [
 	# signal — the same shape as app-store rating counts.
 	('huggingface', [str(HERE / 'huggingface_hub_collect.py')], 25),
 	('goodshort', [str(HERE / 'goodshort_collect.py'), '--pages', '220', '--seed-from-union'], 45),
-	('dramaboxdb', [str(HERE / 'dramaboxdb_collect.py'), '--expand', '3', '--max-titles', '2500'], 45),
+	('dramaboxdb', [str(HERE / 'dramaboxdb_collect.py'), '--expand', '3', '--max-titles', '2500', '--seed-from-union'], 45),
 	('mydrama', [str(HERE / 'mydrama_collect.py')], 20),
 	('reelshort', [str(HERE / 'reelshort_collect.py'), '--no-posters'], 30),
 	('netshort', [str(HERE / 'netshort_collect.py')], 20),
