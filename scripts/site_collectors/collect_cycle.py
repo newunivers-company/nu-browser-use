@@ -300,6 +300,22 @@ def find_posix_shell() -> tuple[Path | None, str]:
 	return None, 'no Git Bash found'
 
 
+def expected_shell_home(home: str) -> str:
+	"""How the staging shell should spell the home directory the collectors used.
+
+	Git Bash writes `C:\\Users\\USER` as `/c/Users/USER`, so the comparison has to
+	be made on that footing — but only where there is a drive letter to move.
+	Applying the rewrite unconditionally turned a POSIX `/home/runner` into
+	`//home/runner`, because `partition(':')` puts the whole path in `drive` when
+	there is no colon and the leading `/` then gets prepended to a string that
+	already had one. Windows hosts never saw it; the first CI run on Linux did.
+	"""
+	drive, colon, rest = home.partition(':')
+	if not colon:
+		return home
+	return f'/{drive.lower()}{rest}'.replace('\\', '/')
+
+
 def shell_sees_our_home(shell: Path) -> tuple[bool, str]:
 	"""Refuse to stage from a shell whose $HOME is not the one the collectors wrote to."""
 	try:
@@ -316,9 +332,7 @@ def shell_sees_our_home(shell: Path) -> tuple[bool, str]:
 	seen = (proc.stdout or '').strip()
 	if not seen:
 		return False, 'shell reported no $HOME'
-	# Git Bash spells C:\Users\USER as /c/Users/USER; compare on that footing.
-	drive, _, rest = str(Path.home()).partition(':')
-	expected = f'/{drive.lower()}{rest}'.replace('\\', '/')
+	expected = expected_shell_home(str(Path.home()))
 	return seen.lower() == expected.lower(), f'{seen} (expected {expected})'
 
 

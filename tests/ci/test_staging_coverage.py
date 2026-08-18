@@ -146,6 +146,26 @@ def test_staging_shell_is_never_the_wsl_launcher():
 	assert 'system32' not in str(shell).lower(), f'staging would run under the WSL launcher: {shell}'
 
 
+@pytest.mark.parametrize(
+	('home', 'expected'),
+	[
+		('C:\\Users\\USER', '/c/Users/USER'),  # Git Bash spelling of a Windows home
+		('D:\\home\\svc', '/d/home/svc'),
+		('/home/runner', '/home/runner'),  # POSIX: nothing to rewrite
+		('/root', '/root'),
+	],
+)
+def test_expected_shell_home_only_rewrites_a_drive_letter(home, expected):
+	"""Regression: the rewrite used to run on paths that had no drive letter.
+
+	`partition(':')` puts the whole string in `drive` when there is no colon, so
+	`/home/runner` came back as `//home/runner` and the shell check below failed
+	on every POSIX host. No Windows workstation could see it — the first CI run
+	on Linux did, which is the argument for this branch reaching CI at all.
+	"""
+	assert collect_cycle.expected_shell_home(home) == expected
+
+
 def test_staging_shell_shares_the_collectors_filesystem():
 	"""The positive case: the chosen shell's $HOME is where the collectors write."""
 	shell, _ = collect_cycle.find_posix_shell()
