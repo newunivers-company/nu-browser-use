@@ -18,6 +18,8 @@ script rather than executing it, so the test states what the script says and a
 divergence between the two is the failure.
 """
 
+import json
+import os
 import re
 from pathlib import Path
 
@@ -27,6 +29,20 @@ from scripts.site_collectors import collect_cycle
 
 COLLECTORS_DIR = Path(__file__).resolve().parents[2] / 'scripts' / 'site_collectors'
 STAGE_SCRIPT = COLLECTORS_DIR / 'stage_to_nas.sh'
+
+# The manifest is the record of what the NAS holds and it lives on the NAS, not
+# in this repo, so the check below is machine-local by nature and skips where the
+# share is absent (CI, any workstation without the mapping). Same candidate order
+# as stage_to_nas.sh: the WSL mount and the mapped letter are one share seen from
+# different shells.
+NAS_CANDIDATES = (
+	os.environ.get('NAS_ROOT', ''),
+	'/mnt/newunivers-sdb/nu-browser-use',
+	'X:/nu-browser-use',
+	'/x/nu-browser-use',
+	'//192.168.0.136/sdb/nu-browser-use',
+)
+MANIFEST_NAME = 'COLLECTION-MANIFEST.json'
 
 # Output dirs deliberately kept off the NAS, with the reason. Empty as of
 # 2026-08-16: newtoki_market was the only entry and it now stages, because the
@@ -42,7 +58,16 @@ EXCLUDED: dict[str, str] = {}
 # (sync_all.ps1) is not in this repo, on the NAS, or in $HOME, so nothing here
 # can refuse on its behalf. The marker file is the entire mechanism, which is
 # why it gets a test.
-NO_DRIVE_SYNC = {'newtoki_market': '_DO-NOT-SYNC-TO-DRIVE.md'}
+#
+# instagram_export joins it for a different reason (2026-08-18): those records
+# are not derived annotation but the works themselves — twelve third-party reels
+# whose licence nobody established. Principle 1 says we do not hold originals;
+# the 「지정 URL 참조 영상」 exception permits holding these for internal
+# reference and stops the deployment one stage short of external cloud storage.
+NO_DRIVE_SYNC = {
+	'newtoki_market': '_DO-NOT-SYNC-TO-DRIVE.md',
+	'instagram_export': '_DO-NOT-SYNC-TO-DRIVE.md',
+}
 
 HOME_DIR_RE = re.compile(r"Path\.home\(\)\s*/\s*'([A-Za-z0-9_]+)'")
 NAME_TOKEN_RE = re.compile(r"-name\s+'([^']+)'")
@@ -155,6 +180,56 @@ def test_collection_loop_permits_only_unrestricted_robots_verdicts():
 			f'the collection loop would walk sources whose robots verdict is {forbidden!r}; docs/collection-policy.md forbids it'
 		)
 	assert permitted == {'allow', 'unknown'}, f'unexpected PERMITTED_ROBOTS: {permitted}'
+
+
+# --- staged is not the same as recorded --------------------------------------
+# stage_to_nas.sh discovers directories, so a new collector reaches the NAS the
+# day it first writes — and is invisible in the manifest forever after, because
+# nothing ever asked. On 2026-08-18 the manifest described fourteen exports while
+# forty-one existed; `promo_export`, written by eight collectors, was among the
+# missing. Staging coverage was already a test. Recording coverage was not, which
+# is the same bug this file was written to kill, one layer up.
+
+
+def nas_manifest() -> dict | None:
+	for candidate in NAS_CANDIDATES:
+		if not candidate:
+			continue
+		path = Path(candidate) / MANIFEST_NAME
+		if path.is_file():
+			return json.loads(path.read_text(encoding='utf-8'))
+	return None
+
+
+def test_every_output_dir_is_recorded_in_the_nas_manifest():
+	manifest = nas_manifest()
+	if manifest is None:
+		pytest.skip(f'no NAS manifest reachable (tried: {[c for c in NAS_CANDIDATES if c]})')
+	recorded = set(manifest.get('exports', {}))
+	declared = declared_output_dirs()
+	unrecorded = sorted(name for name in declared if name not in recorded)
+	assert unrecorded == [], (
+		'these output dirs stage to the NAS but the manifest never mentions them — add an entry: '
+		+ ', '.join(f'{n} (from {sorted(declared[n])[0]})' for n in unrecorded)
+	)
+
+
+def test_manifest_deploy_rule_matches_the_drive_decision():
+	"""The manifest retired stage 3; docs/collection-policy.md must not still promise it.
+
+	Two records of the same decision drifted apart for four days — the manifest
+	said Google Drive sync was retired on 2026-08-14 while principle 4 still read
+	as a three-stage deploy ending at Drive.
+	"""
+	manifest = nas_manifest()
+	if manifest is None:
+		pytest.skip('no NAS manifest reachable')
+	rule = manifest.get('deploy_rule', '')
+	assert 'retired' in rule.lower(), f'deploy_rule no longer records the Drive decision: {rule!r}'
+	policy = (Path(__file__).resolve().parents[2] / 'docs' / 'collection-policy.md').read_text(encoding='utf-8')
+	assert 'G드라이브 동기화는 2026-08-14 은퇴' in policy, (
+		'docs/collection-policy.md must state the Drive retirement the manifest records'
+	)
 
 
 # --- NAS yes, Drive no -------------------------------------------------------
