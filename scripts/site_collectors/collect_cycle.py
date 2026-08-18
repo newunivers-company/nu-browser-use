@@ -59,6 +59,10 @@ DAILY: list[tuple[str, list[str], int]] = [
 	('mastodon', [str(HERE / 'mastodon_trends.py')], 15),
 	('lemmy', [str(HERE / 'lemmy_communities.py')], 20),
 	('bluesky', [str(HERE / 'bsky_trend_collect.py')], 15),
+	# Keyless RSS daily search trends per region — the only major trend surface
+	# still fully keyless (Instagram tag pages are login-walled, TikTok CC is a
+	# JS shell; both need sessions/keys).
+	('gtrends', [str(HERE / 'gtrends_collect.py')], 10),
 	# Downloads are a monotonic counter, so the daily delta is the adoption
 	# signal — the same shape as app-store rating counts.
 	('huggingface', [str(HERE / 'huggingface_hub_collect.py')], 25),
