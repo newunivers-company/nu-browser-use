@@ -4,11 +4,11 @@ and the XHR/resource endpoints the SPA calls."""
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 
 import aiohttp
 from cdp_use import CDPClient
+from cdp_use.cdp.network import RequestWillBeSentEvent
 
 CDP_HTTP = os.environ.get('BROWSER_USE_CDP_HTTP', 'http://127.0.0.1:9222')
 
@@ -20,7 +20,11 @@ async def main() -> None:
 
 	async with CDPClient(ws_url) as client:
 		targets = await client.send.Target.getTargets()
-		page = next(t for t in targets['targetInfos'] if t['type'] == 'page' and 'pinterest.com' in t.get('url', '') and 'recaptcha' not in t.get('url', ''))
+		page = next(
+			t
+			for t in targets['targetInfos']
+			if t['type'] == 'page' and 'pinterest.com' in t.get('url', '') and 'recaptcha' not in t.get('url', '')
+		)
 		session = await client.send.Target.attachToTarget(params={'targetId': page['targetId'], 'flatten': True})
 		sid = session['sessionId']
 		await client.send.Runtime.enable(session_id=sid)
@@ -28,11 +32,10 @@ async def main() -> None:
 
 		xhr: list[dict] = []
 
-		def on_request(client, message: dict) -> None:
-			p = message.get('params', {})
-			req = p.get('request', {})
+		def on_request(event: RequestWillBeSentEvent, session_id: str | None) -> None:
+			req = event.get('request') or {}
 			url = req.get('url', '')
-			if p.get('type') in ('XHR', 'Fetch') and 'pinterest.com' in url:
+			if event.get('type') in ('XHR', 'Fetch') and 'pinterest.com' in url:
 				xhr.append({'method': req.get('method'), 'url': url})
 
 		client.register.Network.requestWillBeSent(on_request)
@@ -83,7 +86,7 @@ async def main() -> None:
 			if base in seen:
 				continue
 			seen.add(base)
-			print(f"{e['method']:5} {e['url'][:170]}")
+			print(f'{e["method"]:5} {e["url"][:170]}')
 
 
 if __name__ == '__main__':
