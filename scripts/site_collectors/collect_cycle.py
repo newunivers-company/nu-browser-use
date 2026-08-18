@@ -113,6 +113,12 @@ WEEKLY: list[tuple[str, list[str], int]] = [
 	('fanqie', [str(HERE / 'fanqie_collect.py')], 20),
 	('vigloo_snapshot', [str(HERE / 'vigloo_snapshot.py')], 30),
 	('prompt_repos', [str(HERE / 'prompt_repo_collect.py')], 20),
+	# Community-curated film-stills DB; galleries accumulate rather than churn,
+	# and the facet-inventory combos read the same site, so one weekly pass
+	# picks up new galleries and refreshes the directing-intent lookups together.
+	('stillslab', [str(HERE / 'stillslab_collect.py')], 25),
+	('stillslab_facets', [str(HERE / 'stillslab_facets.py')], 5),
+	('cross_layer', [str(HERE / 'cross_layer_links.py')], 5),
 	# Browser-rendered listing, so weekly rather than daily: the cost is a real
 	# Chromium launch and the leaderboard does not turn over in a day.
 	('civitai_models', [str(HERE / 'civitai_browser_collect.py')], 30),

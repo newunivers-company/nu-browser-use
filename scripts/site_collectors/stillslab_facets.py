@@ -51,6 +51,75 @@ COMBOS: dict[str, str] = {
 	'flashback_bw': 'color=Black+and+White',
 	'golden_hour': 'time_of_day=Sunrise,Sunset&color=Warm',
 	'insert_shot': 'shot_type=Insert',
+	# --- expansion: the rest of the short-drama directing vocabulary --------
+	# 대결/갈등 3인
+	'standoff_three': 'number_of_people=3&frame_size=Medium+Close+Up,Medium+Wide',
+	# 후회/눈물 클로즈업 (숏드 눈물연출)
+	'tears_ecu': 'frame_size=Extreme+Close+Up&number_of_people=1',
+	# 재회 2인 야간
+	'reunion_night_two': 'number_of_people=2&time_of_day=Night',
+	# 비밀 목격: 1인 + 어두운 실내
+	'witness_dark_interior': 'number_of_people=1&interior_exterior=Interior&time_of_day=Night',
+	# 계급 대비: establishing + exterior
+	'wealth_establishing': 'shot_type=Establishing+shot&interior_exterior=Exterior',
+	# 폭로/충격: ECU + high contrast
+	'shock_ecu_contrast': 'frame_size=Extreme+Close+Up&lighting=High+contrast',
+	# 이별: 2인 + desaturated
+	'breakup_desat_two': 'number_of_people=2&color=Desaturated',
+	# 새벽 재정비: dawn + single
+	'dawn_reset_single': 'time_of_day=Dawn&number_of_people=1',
+	# 사무실 권력: interior + 2 shot
+	'office_power_twoshot': 'shot_type=2+shot&interior_exterior=Interior',
+	# 추격 night + low angle
+	'chase_night_lowangle': 'shot_type=Low+angle&time_of_day=Night',
+	# 우월함: overhead + single
+	'domination_overhead': 'shot_type=Overhead&number_of_people=1',
+	# 로맨스 대치: 2인 + soft light
+	'romance_softlight_two': 'number_of_people=2&lighting=Soft+light',
+	# 위장/가면: silhouette + day
+	'deception_silhouette_day': 'lighting=Silhouette&time_of_day=Day',
+	# 몽환/환상: saturated + sunset
+	'dream_saturated_sunset': 'color=Saturated&time_of_day=Sunset,Sunrise',
+	# 복수 결의: 1인 + hard light
+	'vendetta_hardlight': 'number_of_people=1&lighting=Hard+light',
+	# 숨막히는 밀폐: interior + ECU
+	'claustrophobic_ecu_interior': 'frame_size=Extreme+Close+Up&interior_exterior=Interior',
+	# 군중 속 고립: crowd + wide
+	'isolated_in_crowd': 'number_of_people=6%2B&frame_size=Wide,Extreme+Wide',
+	# 청량 낮 로맨스: day + warm + exterior
+	'daylight_romance': 'time_of_day=Day&color=Warm&interior_exterior=Exterior',
+	# 의식/폭력 후: desat + night
+	'aftermath_desat_night': 'color=Desaturated&time_of_day=Night',
+	# 냉담한 재벌: cool + interior + single
+	'cold_wealth_interior': 'color=Cool&interior_exterior=Interior&number_of_people=1',
+	# 신비/오컬트: night + backlight + single
+	'occult_night_backlit': 'time_of_day=Night&lighting=Backlight&number_of_people=1',
+	# 그리움 과거회상: sepia
+	'nostalgia_sepia': 'color=Sepia',
+	# 승부처: group + high angle
+	'staking_group_highangle': 'number_of_people=3,4,5&shot_type=High+angle',
+	# 도주: exterior + group + night
+	'fleeing_group_night': 'number_of_people=3,4,5,6%2B&time_of_day=Night&interior_exterior=Exterior',
+	# 은밀한 거래: 2인 + dusk
+	'secret_deal_dusk': 'number_of_people=2&time_of_day=Dusk',
+	# 웨딩/결혼: white? — color 없으므로 2인 + soft + day
+	'wedding_soft_day': 'number_of_people=2&lighting=Soft+light&time_of_day=Day',
+	# 질투 삼각: 3인 + side light
+	'jealousy_triangle': 'number_of_people=3&lighting=Side+light',
+	# 절망의 바닥: 1인 + low key 유사 (low contrast + night)
+	'despair_night_lowcontrast': 'number_of_people=1&time_of_day=Night&lighting=Low+contrast',
+	# 위협적 등장: dutch + low angle
+	'menace_dutch_lowangle': 'shot_type=Dutch+angle,Low+angle',
+	# 아늑한 가족: 3인 + warm + interior
+	'family_warm_interior': 'number_of_people=3,4,5&color=Warm&interior_exterior=Interior',
+	# 기억상실 혼란: dutch + single
+	'confusion_dutch_single': 'shot_type=Dutch+angle&number_of_people=1',
+	# 약속/밀회: 2인 + dusk + exterior
+	'truyst_dusk_exterior': 'number_of_people=2&time_of_day=Dusk&interior_exterior=Exterior',
+	# 시험/승진 압박: 1인 + interior + day + hard
+	'pressure_hardlight_day': 'number_of_people=1&lighting=Hard+light&time_of_day=Day',
+	# 최후 대결: 2인 + high contrast + night
+	'final_showdown': 'number_of_people=2&lighting=High+contrast&time_of_day=Night',
 }
 
 
