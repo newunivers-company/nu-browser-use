@@ -8,6 +8,7 @@ import json
 import os
 
 from cdp_use import CDPClient
+from cdp_use.cdp.network import RequestWillBeSentEvent
 
 CDP_HTTP = os.environ.get('BROWSER_USE_CDP_HTTP', 'http://127.0.0.1:9222')
 
@@ -22,13 +23,8 @@ async def main() -> None:
 
 	async with CDPClient(ws_url) as client:
 		targets = await client.send.Target.getTargets()
-		page_target = next(
-			t for t in targets['targetInfos']
-			if t['type'] == 'page' and 'shotdeck.com' in t.get('url', '')
-		)
-		session = await client.send.Target.attachToTarget(
-			params={'targetId': page_target['targetId'], 'flatten': True}
-		)
+		page_target = next(t for t in targets['targetInfos'] if t['type'] == 'page' and 'shotdeck.com' in t.get('url', ''))
+		session = await client.send.Target.attachToTarget(params={'targetId': page_target['targetId'], 'flatten': True})
 		session_id = session['sessionId']
 
 		await client.send.Page.enable(session_id=session_id)
@@ -37,11 +33,10 @@ async def main() -> None:
 
 		observed: list[dict] = []
 
-		def on_request(client, message: dict) -> None:
-			params = message.get('params', {})
-			request = params.get('request', {})
+		def on_request(event: RequestWillBeSentEvent, session_id: str | None) -> None:
+			request = event.get('request') or {}
 			url = request.get('url', '')
-			request_type = params.get('type', '')
+			request_type = event.get('type', '')
 			if 'shotdeck.com' in url and request_type in ('XHR', 'Fetch'):
 				observed.append({'method': request.get('method'), 'url': url, 'type': request_type})
 
@@ -87,7 +82,7 @@ async def main() -> None:
 			if key in seen:
 				continue
 			seen.add(key)
-			print(f"{entry['method']:5} [{entry['type']}] {entry['url'][:200]}")
+			print(f'{entry["method"]:5} [{entry["type"]}] {entry["url"][:200]}')
 
 		# 3. Sample the shot cards currently in the DOM to learn the metadata fields.
 		cards = await evaluate(

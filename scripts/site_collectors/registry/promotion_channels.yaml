@@ -1,0 +1,888 @@
+# Short-drama promotion-channel registry.
+#
+# Data, not code. Collectors read this file; nothing hardcodes URLs.
+#
+# access_tier decides whether a channel is fetched at all:
+#   T0  keyless HTTP, robots-clean, structured data available   -> collect
+#   T1  reachable but JS-rendered / no sitemap -> needs CDP      -> collect
+#   T2  authwall or robots-prohibited                            -> DO NOT FETCH
+#
+# T2 rows stay in the registry on purpose. We record that the channel exists
+# and who owns it; we never request it. `collect: false` is enforced by
+# promo_registry_verify.py, which skips those URLs entirely.
+#
+# official_status is only `verified` when a first-party source states the URL.
+# The evidence must be named — no inference from handle spelling.
+#
+# Verified 2026-08-14 (HTTP + robots.txt sweep; App Store Lookup API).
+
+schema_version: 1
+verified_at: '2026-08-14'
+
+# ---------------------------------------------------------------------------
+# Companies. legal_entity comes from the App Store `sellerName` field, which is
+# a first-party legal attestation — the cleanest keyless entity resolution we
+# have. `parent` is only filled where a first-party source states it.
+# ---------------------------------------------------------------------------
+companies:
+  - id: crazy_maple
+    name: Crazy Maple Studio
+    legal_entity: New Leaf Publishing, Inc.
+    legal_entity_evidence: itunes:1636235979
+    parent: null   # widely reported as a COL Group subsidiary; unverified from first-party source
+    country: US
+
+  - id: storymatrix
+    name: Storymatrix
+    legal_entity: STORYMATRIX PTE. LTD
+    legal_entity_evidence: itunes:6445905219
+    country: SG
+
+  - id: spoonlabs
+    name: SpoonLabs
+    legal_entity: Spoonlabs, Inc.
+    legal_entity_evidence: itunes:6503421271
+    country: KR
+
+  - id: holywater
+    name: HOLYWATER
+    legal_entity: Holy Water Limited
+    legal_entity_evidence: itunes:6498713494
+    country: UA
+
+  - id: newreading
+    name: New Reading Technology
+    legal_entity: SINGAPORE NEW READING TECHNOLOGY PTE. LTD.
+    legal_entity_evidence: itunes:6448176203
+    country: SG
+
+  - id: skywork
+    name: Skywork AI
+    legal_entity: SKYWORK AI PTE LTD
+    legal_entity_evidence: itunes:6670430706
+    country: SG
+
+  - id: shorttv
+    name: ShortTV
+    legal_entity: SHORTTV LIMITED
+    legal_entity_evidence: itunes:6464002625
+    country: HK
+
+  - id: netstory
+    name: NetStory
+    legal_entity: NETSTORY PTE. LTD.
+    legal_entity_evidence: itunes:6504849169
+    country: SG
+
+  - id: col_group
+    name: COL Group (中文在线)
+    legal_entity: Col Web Pte Ltd
+    legal_entity_evidence: itunes:6473688138
+    country: CN
+
+  - id: yuder
+    name: Yuder / Mega Matrix
+    legal_entity: YUDER PTE. LTD.
+    legal_entity_evidence: itunes:1645515419
+    country: SG
+
+  - id: storyby
+    name: Storyby
+    legal_entity: Brailion Ventures Limited
+    legal_entity_evidence: itunes:6478970137
+    country: HK
+
+  - id: gammagrl
+    name: GammaTime
+    legal_entity: Gammagrl, LLC
+    legal_entity_evidence: itunes:6504227709
+    country: US
+
+  # Production / industry side — no consumer app, so no App Store attestation.
+  - id: amo_pictures
+    name: Amo Pictures
+    legal_entity: null
+    country: US
+  - id: second_rodeo
+    name: Second Rodeo Productions
+    legal_entity: null
+    country: US
+  - id: storypod
+    name: Storypod Studio
+    legal_entity: null
+    country: null
+  - id: stratagem
+    name: Stratagem Vertical Content
+    legal_entity: null
+    country: null
+  - id: short_drama_alliance
+    name: Short Drama Alliance
+    legal_entity: null
+    country: null
+
+# ---------------------------------------------------------------------------
+# Brands. app_ios drives appstore_watch.py.
+# ---------------------------------------------------------------------------
+brands:
+  - {id: reelshort,   company: crazy_maple,  name: ReelShort,   app_ios: 1636235979, app_bundle: com.newleaf.app.ios.vic}
+  - {id: dramabox,    company: storymatrix,  name: DramaBox,    app_ios: 6445905219, app_bundle: com.storymatrix.drama}
+  - {id: vigloo,      company: spoonlabs,    name: Vigloo,      app_ios: 6503421271, app_bundle: com.vigloo}
+  - {id: my_drama,    company: holywater,    name: My Drama,    app_ios: 6498713494, app_bundle: com.dashdramas}
+  - {id: goodshort,   company: newreading,   name: GoodShort,   app_ios: 6448176203, app_bundle: com.newreading.goodreels}
+  - {id: dramawave,   company: skywork,      name: DramaWave,   app_ios: 6670430706, app_bundle: com.dramabuzz.app}
+  - {id: shortmax,    company: shorttv,      name: ShortMax,    app_ios: 6464002625, app_bundle: live.shorttv.ios}
+  - {id: netshort,    company: netstory,     name: NetShort,    app_ios: 6504849169, app_bundle: com.netshort.abroad}
+  - {id: flareflow,   company: col_group,    name: FlareFlow,   app_ios: 6744237126, app_bundle: tv.flareflow.drama}
+  - {id: sereal_plus, company: col_group,    name: Sereal+,     app_ios: 6473688138, app_bundle: com.serealplus.video.app}
+  - {id: unireel,     company: col_group,    name: UniReel,     app_ios: 6695744224, app_bundle: com.col-jp.unireel}
+  - {id: flextv,      company: yuder,        name: FlexTV,      app_ios: 1645515419, app_bundle: com.aykj.flextv}
+  - {id: dramashorts, company: storyby,      name: DramaShorts, app_ios: 6478970137, app_bundle: io.drama.shorts}
+  - {id: gammatime,   company: gammagrl,     name: GammaTime,   app_ios: 6504227709, app_bundle: com.gamma.gamma.prod}
+
+# ---------------------------------------------------------------------------
+# Channels.
+# ---------------------------------------------------------------------------
+channels:
+
+  # --- ReelShort / Crazy Maple ---------------------------------------------
+  - url: https://www.reelshort.com/
+    brand: reelshort
+    channel_type: website
+    access_tier: T0
+    robots_verdict: allow
+    official_status: verified
+    official_evidence: appstore_seller_url
+    consumer_or_b2b: consumer
+    collect: true
+    notes: catalog already covered by reelshort_collect.py; here for registry completeness
+  - url: https://crazymaplestudios.com/
+    company: crazy_maple
+    channel_type: corporate
+    access_tier: T0
+    robots_verdict: unknown
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: true
+  - url: https://www.instagram.com/reelshortapp
+    brand: reelshort
+    channel_type: instagram
+    access_tier: T2
+    robots_verdict: authwall
+    official_status: verified
+    official_evidence: appstore_description
+    consumer_or_b2b: consumer
+    collect: false
+    notes: login shell only (loginPage marker)
+  - url: https://www.tiktok.com/@reelshortapp
+    brand: reelshort
+    channel_type: tiktok
+    access_tier: T2
+    robots_verdict: named_ai_block
+    official_status: verified
+    official_evidence: appstore_description
+    consumer_or_b2b: consumer
+    collect: false
+    notes: >-
+      Two independent blocks. Technical: profile URL serves a 1.4KB login shell.
+      Policy: robots stacks anthropic-ai / ClaudeBot / Claude-User / GPTBot and
+      a dozen more onto a blanket disallow. (The `*` group by itself does not
+      block /@user paths — the wall is the login, not the star group.)
+  - url: https://youtube.com/@reelshortapp
+    brand: reelshort
+    channel_type: youtube
+    access_tier: T1
+    robots_verdict: allow
+    official_status: verified
+    official_evidence: appstore_description
+    consumer_or_b2b: consumer
+    collect: false
+    notes: robots allows channel pages but /feeds/videos.xml is disallowed; use YouTube Data API v3 (needs key) — pending decision
+  - url: https://www.facebook.com/reelshortapp
+    brand: reelshort
+    channel_type: facebook
+    access_tier: T2
+    robots_verdict: disallow
+    official_status: claimed
+    consumer_or_b2b: consumer
+    collect: false
+    notes: HTTP 400 on 2026-08-14; robots prohibits automated collection
+  - url: https://www.linkedin.com/company/crazymaplestudio
+    company: crazy_maple
+    channel_type: linkedin
+    access_tier: T2
+    robots_verdict: disallow
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: false
+
+  # --- DramaBox / Storymatrix ----------------------------------------------
+  - url: https://www.dramabox.com/
+    brand: dramabox
+    channel_type: website
+    access_tier: T0
+    robots_verdict: allow
+    official_status: verified
+    official_evidence: appstore_seller_url
+    consumer_or_b2b: consumer
+    collect: true
+  - url: https://www.linkedin.com/company/dramabox
+    company: storymatrix
+    channel_type: linkedin
+    access_tier: T2
+    robots_verdict: disallow
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: false
+  - url: https://linktr.ee/dramaboxshort
+    brand: dramabox
+    channel_type: linkhub
+    access_tier: T2
+    robots_verdict: disallow
+    official_status: unverified
+    consumer_or_b2b: consumer
+    collect: false
+    notes: 'linktr.ee robots: User-agent: * -> Disallow: /'
+
+  - url: https://www.dramaboxdb.com/
+    brand: dramabox
+    channel_type: website
+    access_tier: T0
+    robots_verdict: unknown
+    official_status: verified
+    official_evidence: appstore_description
+    consumer_or_b2b: consumer
+    collect: true
+    notes: >-
+      Found by appstore_watch discovery; not in the source research doc, and a
+      different property from dramabox.com — this is the SEO satellite and it is
+      far more forthcoming. Each title page ships a Next.js payload with
+      viewCount, followCount, chapterCount, genre, shelf date, per-episode
+      durations and a recommendation rail. No sitemap (404 on every variant), so
+      dramaboxdb_collect.py seeds from genre listings and expands along the
+      recommendation rails. robots allows /; /search?* is disallowed and unused.
+      NOT COLLECTED: chapterList also carries signed CloudFront mp4/m3u8 URLs —
+      direct handles to episode video — which are stripped and never written,
+      per the standing ban on collecting episode content.
+
+  # --- Vigloo / SpoonLabs ---------------------------------------------------
+  - url: https://www.vigloo.com/
+    brand: vigloo
+    channel_type: website
+    access_tier: T0
+    robots_verdict: allow
+    official_status: verified
+    official_evidence: appstore_seller_url
+    consumer_or_b2b: consumer
+    collect: true
+    notes: catalog covered by vigloo_collect.py
+  - url: https://vigloo-blog.com/
+    brand: vigloo
+    channel_type: blog
+    access_tier: T0
+    robots_verdict: allow
+    official_status: verified
+    official_evidence: appstore_description
+    consumer_or_b2b: consumer
+    collect: true
+  - url: https://www.spoonlabs.com/kr/
+    company: spoonlabs
+    channel_type: corporate
+    access_tier: T0
+    robots_verdict: unknown
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: true
+  - url: https://medium.com/spoontech/feed
+    company: spoonlabs
+    channel_type: feed
+    access_tier: T2
+    robots_verdict: named_ai_block
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: false
+    decision_pending: true
+    notes: >-
+      Feed returns 200 and Medium's `User-Agent: *` group permits this path, but
+      a second group stacks ClaudeBot / GPTBot / Bytespider / meta-externalagent /
+      Applebot-Extended onto `Disallow: /`. collection-policy.md forbids scraping
+      sources that name AI crawlers, so this is held pending a human ruling.
+      Substitute if declined: SpoonLabs corporate site + brunch.
+  - url: https://brunch.co.kr/@spoonlabs
+    company: spoonlabs
+    channel_type: blog
+    access_tier: T1
+    robots_verdict: unknown
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: false
+    notes: RSS endpoint to be discovered
+  - url: https://www.instagram.com/vigloo_official/
+    brand: vigloo
+    channel_type: instagram
+    access_tier: T2
+    robots_verdict: authwall
+    official_status: verified
+    official_evidence: appstore_description
+    consumer_or_b2b: consumer
+    collect: false
+  - url: https://www.tiktok.com/@vigloo_official
+    brand: vigloo
+    channel_type: tiktok
+    access_tier: T2
+    robots_verdict: named_ai_block
+    official_status: verified
+    official_evidence: appstore_description
+    consumer_or_b2b: consumer
+    collect: false
+  - url: https://www.youtube.com/@ViglooOfficial
+    brand: vigloo
+    channel_type: youtube
+    access_tier: T1
+    robots_verdict: allow
+    official_status: verified
+    official_evidence: appstore_description
+    consumer_or_b2b: consumer
+    collect: false
+  - url: https://www.linkedin.com/company/spoonlabs/
+    company: spoonlabs
+    channel_type: linkedin
+    access_tier: T2
+    robots_verdict: disallow
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: false
+
+  # --- My Drama / HOLYWATER -------------------------------------------------
+  - url: https://www.holywater.tech/
+    company: holywater
+    channel_type: corporate
+    access_tier: T0
+    robots_verdict: allow
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: true
+    notes: Webflow static — clean HTML diffing
+  - url: https://my-drama.com/
+    brand: my_drama
+    channel_type: website
+    access_tier: T0
+    robots_verdict: unknown
+    official_status: verified
+    official_evidence: appstore_description
+    consumer_or_b2b: consumer
+    collect: true
+    notes: >-
+      Found by appstore_watch discovery — the source research doc listed only My
+      Drama's social/Linktree presence and missed the web property entirely. It
+      is the richest structured source in the registry: every series page
+      publishes a full schema.org TVSeries node (episodes, seasons, dates,
+      language, genre array, aggregateRating, an interactionStatistic
+      WatchAction counter, trailer, and a cast list). sitemap.xml enumerates the
+      catalog, robots is Allow:/ apart from tracking params. mydrama_collect.py
+      has 191/191 series, 177 with watch counts, 184 distinct actors.
+  - url: https://linktr.ee/my_drama_series
+    brand: my_drama
+    channel_type: linkhub
+    access_tier: T2
+    robots_verdict: disallow
+    official_status: claimed
+    consumer_or_b2b: consumer
+    collect: false
+  - url: https://linktr.ee/holywater_tech
+    company: holywater
+    channel_type: linkhub
+    access_tier: T2
+    robots_verdict: disallow
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: false
+  - url: https://www.instagram.com/my_drama_series/
+    brand: my_drama
+    channel_type: instagram
+    access_tier: T2
+    robots_verdict: authwall
+    official_status: claimed
+    consumer_or_b2b: consumer
+    collect: false
+  - url: https://www.tiktok.com/@my_drama_series_
+    brand: my_drama
+    channel_type: tiktok
+    access_tier: T2
+    robots_verdict: named_ai_block
+    official_status: claimed
+    consumer_or_b2b: consumer
+    collect: false
+  - url: https://www.youtube.com/@MyDramaApp
+    brand: my_drama
+    channel_type: youtube
+    access_tier: T1
+    robots_verdict: allow
+    official_status: claimed
+    consumer_or_b2b: consumer
+    collect: false
+  - url: https://www.linkedin.com/company/holywater
+    company: holywater
+    channel_type: linkedin
+    access_tier: T2
+    robots_verdict: disallow
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: false
+
+  # --- GoodShort ------------------------------------------------------------
+  - url: https://www.goodshort.com/
+    brand: goodshort
+    channel_type: website
+    access_tier: T0
+    robots_verdict: allow
+    official_status: verified
+    official_evidence: appstore_seller_url
+    consumer_or_b2b: consumer
+    collect: true
+    notes: >-
+      Reclassified T1 -> T0 by promo_recon on 2026-08-14. Looks like an SPA but
+      is server-rendered: HAR showed 73 requests and zero catalog JSON (acf =
+      poster CDN, acfs3 = JS bundle, api.xintaicz.cn = Sensors Analytics). The
+      catalog lives in window.__INITIAL_STATE__, so goodshort_collect.py reads
+      it over plain HTTP. 461 titles with a full engagement panel (viewCount,
+      likeCount, followCount, commentCount, inLibraryNum, ratings) plus genre
+      and trope taxonomies. sitemap 404, so slugs come from home + tag pages.
+  - url: https://www.linkedin.com/company/goodshort
+    company: newreading
+    channel_type: linkedin
+    access_tier: T2
+    robots_verdict: disallow
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: false
+  - url: https://www.tiktok.com/@goodshort_video
+    brand: goodshort
+    channel_type: tiktok
+    access_tier: T2
+    robots_verdict: named_ai_block
+    official_status: verified
+    official_evidence: appstore_description
+    consumer_or_b2b: consumer
+    collect: false
+
+  # --- DramaWave ------------------------------------------------------------
+  - url: https://www.mydramawave.com/
+    brand: dramawave
+    channel_type: website
+    access_tier: T1
+    robots_verdict: unknown
+    official_status: claimed
+    consumer_or_b2b: consumer
+    collect: true
+    notes: 9KB shell as of 2026-08-14 — little content behind it
+  - url: https://www.dramawave.tech/
+    company: skywork
+    channel_type: corporate
+    access_tier: T1
+    robots_verdict: unknown
+    official_status: unverified
+    consumer_or_b2b: b2b
+    collect: false
+    notes: 2.8KB shell; collection-policy.md previously recorded this as DNS-dead — now resolving
+  - url: https://www.linkedin.com/company/dramawave
+    company: skywork
+    channel_type: linkedin
+    access_tier: T2
+    robots_verdict: disallow
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: false
+
+  # --- ShortMax / ShortTV ---------------------------------------------------
+  - url: https://www.shorttv.live/
+    brand: shortmax
+    channel_type: website
+    access_tier: T1
+    robots_verdict: allow
+    official_status: verified
+    official_evidence: redirect_target
+    consumer_or_b2b: consumer
+    collect: true
+    notes: >-
+      shortmax.app redirects here — rebrand detected 2026-08-14. promo_recon:
+      Nuxt SSR, no catalog API (154-request HAR held only i18n, build manifest,
+      ipify and telemetry). The __NUXT_DATA__ payload is ENCRYPTED — every value
+      is a base64 block sharing the prefix 9MePJ5iXm/LfrSEc7YAS7, a fixed-IV
+      symmetric envelope. We do not break it; shortmax_collect.py reads the
+      rendered page instead, which the browser decrypts as any visitor's would.
+      Stays T1 for that reason. robots allows all but /search/. 76 titles with
+      plays/likes plus 1,125 "You Might Like" recommendation edges.
+  - url: https://shortmax.tech/
+    company: shorttv
+    channel_type: corporate
+    access_tier: T1
+    robots_verdict: unknown
+    official_status: unverified
+    consumer_or_b2b: b2b
+    collect: false
+    notes: 2KB shell
+  - url: https://www.linkedin.com/company/shortmax.app
+    company: shorttv
+    channel_type: linkedin
+    access_tier: T2
+    robots_verdict: disallow
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: false
+  # Footer links off shorttv.live, read by promo_browser_collect — first-party,
+  # so these are verified where the research doc had no ShortMax socials at all.
+  - url: https://www.facebook.com/ShortMaxapp/
+    brand: shortmax
+    channel_type: facebook
+    access_tier: T2
+    robots_verdict: disallow
+    official_status: verified
+    official_evidence: site_footer
+    consumer_or_b2b: consumer
+    collect: false
+  - url: https://www.instagram.com/shortmax_app/
+    brand: shortmax
+    channel_type: instagram
+    access_tier: T2
+    robots_verdict: authwall
+    official_status: verified
+    official_evidence: site_footer
+    consumer_or_b2b: consumer
+    collect: false
+  - url: https://www.youtube.com/channel/UC1agiDBwuxrjoMNrwDOfNdA
+    brand: shortmax
+    channel_type: youtube
+    access_tier: T1
+    robots_verdict: allow
+    official_status: verified
+    official_evidence: site_footer
+    consumer_or_b2b: consumer
+    collect: false
+    notes: pending the YouTube Data API decision
+  - url: https://linktr.ee/shorttvmax1
+    brand: shortmax
+    channel_type: linkhub
+    access_tier: T2
+    robots_verdict: disallow
+    official_status: unverified
+    consumer_or_b2b: consumer
+    collect: false
+
+  # --- NetShort / NetStory --------------------------------------------------
+  - url: https://netshort.com/
+    brand: netshort
+    channel_type: website
+    access_tier: T0
+    robots_verdict: allow
+    official_status: verified
+    official_evidence: appstore_seller_url
+    consumer_or_b2b: consumer
+    collect: true
+    notes: catalog covered by netshort_collect.py; root redirects to /marketing
+  - url: https://t.me/netshort_official
+    brand: netshort
+    channel_type: telegram
+    access_tier: T0
+    robots_verdict: unknown
+    official_status: claimed
+    consumer_or_b2b: consumer
+    collect: true
+    notes: >-
+      /s/ web preview is DISABLED (0 message blocks vs 206 on the t.me/s/durov
+      control), so post text is unreachable without joining the channel — which
+      is authentication, and out of policy. Landing card exposes subscriber
+      count only (423,587 on 2026-08-14). Collected as a size time series.
+
+  # --- COL Group / FlareFlow ------------------------------------------------
+  - url: https://www.flareflow.tv/
+    brand: flareflow
+    channel_type: website
+    access_tier: T1
+    robots_verdict: unknown
+    official_status: verified
+    official_evidence: appstore_seller_url
+    consumer_or_b2b: consumer
+    collect: true
+    notes: 3.2KB shell, sitemap 404 -> CDP
+  - url: https://www.col.com/
+    company: col_group
+    channel_type: corporate
+    access_tier: T2
+    robots_verdict: unknown
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: false
+    notes: >-
+      Alibaba Cloud WAF (Tengine, acw_tc challenge cookie) answers 405 to every
+      request shape we tried. Getting past it means defeating a bot-protection
+      control, which is out of policy. COL signal comes from the FlareFlow /
+      Sereal+ / UniReel App Store records instead.
+  - url: https://www.linkedin.com/company/%E4%B8%AD%E6%96%87%E5%9C%A8%E7%BA%BF%E9%9B%86%E5%9B%A2%E8%82%A1%E4%BB%BD%E6%9C%89%E9%99%90%E5%85%AC%E5%8F%B8
+    company: col_group
+    channel_type: linkedin
+    access_tier: T2
+    robots_verdict: disallow
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: false
+
+  - url: https://www.sereal.com/
+    brand: sereal_plus
+    channel_type: website
+    access_tier: T0
+    robots_verdict: unknown
+    official_status: verified
+    official_evidence: appstore_description
+    consumer_or_b2b: consumer
+    collect: true
+    notes: >-
+      COL Group's second consumer brand. Found by appstore_watch discovery;
+      absent from the source research doc, which covered COL only via FlareFlow.
+
+  # --- FlexTV / Mega Matrix -------------------------------------------------
+  - url: https://www.flextv.cc/
+    brand: flextv
+    channel_type: website
+    access_tier: T1
+    robots_verdict: unknown
+    official_status: verified
+    official_evidence: appstore_seller_url
+    consumer_or_b2b: consumer
+    collect: true
+    notes: >-
+      Nuxt SSR, no catalog API, sitemap 404. Payload is PLAINTEXT, so an HTTP
+      collector would be trivial — we deliberately do not write one. robots.txt
+      has no `User-agent: *` group at all: it allowlists Googlebot / Bingbot /
+      Yandex / Yeti and denies python-requests / Scrapy / wget / HTTrack /
+      crawler4j / libwww-perl by name. No rule formally binds us (stdlib
+      can_fetch('*') is True) but the intent is unmistakable, and the server
+      agrees — default aiohttp gets `400 Too many headers received` while a
+      browser is served. Line drawn is library-vs-browser, so flextv_collect.py
+      renders. 115 titles with views/likes. COVERAGE GAPS: /dramas/all-dramas
+      and the genre grids are anchor-less JS cards, so enumeration is home plus
+      genre-page rails only; and genre is NOT collected, because every genre
+      page returns the same shared rail (+10 then +0 x5), making listing-based
+      attribution provably wrong.
+  # Footer links off flextv.cc, read by promo_browser_collect.
+  - url: https://www.instagram.com/flextv_official_us
+    brand: flextv
+    channel_type: instagram
+    access_tier: T2
+    robots_verdict: authwall
+    official_status: verified
+    official_evidence: site_footer
+    consumer_or_b2b: consumer
+    collect: false
+    notes: igsh tracking param stripped from the discovered URL
+  - url: https://www.tiktok.com/@flextv_english
+    brand: flextv
+    channel_type: tiktok
+    access_tier: T2
+    robots_verdict: named_ai_block
+    official_status: verified
+    official_evidence: site_footer
+    consumer_or_b2b: consumer
+    collect: false
+  - url: https://www.facebook.com/profile.php?id=100087157901968
+    brand: flextv
+    channel_type: facebook
+    access_tier: T2
+    robots_verdict: disallow
+    official_status: verified
+    official_evidence: site_footer
+    consumer_or_b2b: consumer
+    collect: false
+  - url: https://a.flextv.cc/
+    brand: flextv
+    channel_type: affiliate
+    access_tier: T0
+    robots_verdict: unknown
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: false
+    notes: >-
+      The ranking plan called this P0 for competitor UA economics, but there is
+      nothing to read anonymously: it is a Vue SPA shell (id="app", no h1, no
+      headings) that stays empty after rendering, so the commission terms sit
+      behind affiliate login. Logging in is authentication and out of policy.
+      Recorded as reachable-but-empty rather than left as a silently blank
+      collectible row.
+  - url: https://www.youtube.com/@FlexTV_English
+    brand: flextv
+    channel_type: youtube
+    access_tier: T1
+    robots_verdict: allow
+    official_status: verified
+    official_evidence: appstore_description
+    consumer_or_b2b: consumer
+    collect: false
+    notes: found by appstore_watch discovery; pending the YouTube Data API decision
+  - url: https://megamatrix.io/
+    company: yuder
+    channel_type: corporate
+    access_tier: T0
+    robots_verdict: unknown
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: true
+    notes: /home path is 404 — root only
+  - url: https://www.linkedin.com/company/megamatrixmpu
+    company: yuder
+    channel_type: linkedin
+    access_tier: T2
+    robots_verdict: disallow
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: false
+
+  # --- DramaShorts / Storyby ------------------------------------------------
+  - url: https://dramashorts.io/
+    brand: dramashorts
+    channel_type: website
+    access_tier: T2
+    robots_verdict: named_ai_block
+    official_status: verified
+    official_evidence: appstore_seller_url
+    consumer_or_b2b: consumer
+    collect: false
+    decision_pending: true
+    notes: >-
+      Technically the best target left — Next.js, sitemap.xml 200 (114KB). But
+      robots stacks ClaudeBot / GPTBot / CCBot / Bytespider / Google-Extended /
+      meta-externalagent / Applebot-Extended onto Disallow:/ while allowing `*`.
+      Held pending a human ruling under collection-policy.md. Substitute:
+      App Store record for DramaShorts (itunes:6478970137).
+  - url: https://storyby.tech/
+    company: storyby
+    channel_type: corporate
+    access_tier: T0
+    robots_verdict: allow
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: true
+  - url: https://lnk.bio/dramashorts
+    brand: dramashorts
+    channel_type: linkhub
+    access_tier: T2
+    robots_verdict: unknown
+    official_status: unverified
+    consumer_or_b2b: consumer
+    collect: false
+    notes: link-hub class treated as T2 by default pending robots check
+  - url: https://www.linkedin.com/company/dramashorts
+    company: storyby
+    channel_type: linkedin
+    access_tier: T2
+    robots_verdict: disallow
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: false
+  - url: https://www.linkedin.com/company/storyby-tech
+    company: storyby
+    channel_type: linkedin
+    access_tier: T2
+    robots_verdict: disallow
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: false
+
+  # --- GammaTime -----------------------------------------------------------
+  - url: https://gammatime.live/
+    brand: gammatime
+    channel_type: website
+    access_tier: T0
+    robots_verdict: allow
+    official_status: verified
+    official_evidence: redirect_target
+    consumer_or_b2b: consumer
+    collect: true
+    notes: gammatime.ai redirects here
+  - url: https://www.linkedin.com/company/gammatime
+    company: gammagrl
+    channel_type: linkedin
+    access_tier: T2
+    robots_verdict: disallow
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: false
+
+  # --- Production companies / industry -------------------------------------
+  - url: https://www.amopictures.com/
+    company: amo_pictures
+    channel_type: corporate
+    access_tier: T0
+    robots_verdict: allow
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: true
+    notes: sitemap 200; /vertical lists per-platform delivery credits -> studio→platform edge list
+  - url: https://www.oursecondrodeo.com/
+    company: second_rodeo
+    channel_type: corporate
+    access_tier: T0
+    robots_verdict: allow
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: true
+  - url: https://stratagemcontent.com/
+    company: stratagem
+    channel_type: corporate
+    access_tier: T0
+    robots_verdict: allow
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: true
+    notes: Nuxt; markets CAC/low-CPI creative services — ad-side vocabulary
+  - url: https://www.shortdramaalliance.com/index
+    company: short_drama_alliance
+    channel_type: corporate
+    access_tier: T1
+    robots_verdict: unknown
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: false
+    notes: >-
+      1.7KB SPA shell titled "BBS"; corpsite_watch read 0 headings and 0
+      internal paths, and rendering adds nothing. No industry content is served
+      to an anonymous visitor at this path.
+  - url: https://www.linkedin.com/company/second-rodeo-productions
+    company: second_rodeo
+    channel_type: linkedin
+    access_tier: T2
+    robots_verdict: disallow
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: false
+  - url: https://www.linkedin.com/company/storypod-studio
+    company: storypod
+    channel_type: linkedin
+    access_tier: T2
+    robots_verdict: disallow
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: false
+    notes: only known channel for this company — nothing collectible
+  - url: https://www.linkedin.com/company/stratagem-vertical-content
+    company: stratagem
+    channel_type: linkedin
+    access_tier: T2
+    robots_verdict: disallow
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: false
+  - url: https://www.linkedin.com/company/amopictures/
+    company: amo_pictures
+    channel_type: linkedin
+    access_tier: T2
+    robots_verdict: disallow
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: false
+  - url: https://www.linkedin.com/company/short-drama-alliance
+    company: short_drama_alliance
+    channel_type: linkedin
+    access_tier: T2
+    robots_verdict: disallow
+    official_status: claimed
+    consumer_or_b2b: b2b
+    collect: false

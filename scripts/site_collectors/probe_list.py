@@ -9,6 +9,7 @@ import os
 
 import aiohttp
 from cdp_use import CDPClient
+from cdp_use.cdp.network import RequestWillBeSentEvent
 
 CDP_HTTP = os.environ.get('BROWSER_USE_CDP_HTTP', 'http://127.0.0.1:9222')
 
@@ -28,10 +29,9 @@ async def main() -> None:
 
 		xhr: list[dict] = []
 
-		def on_request(client, message: dict) -> None:
-			p = message.get('params', {})
-			req = p.get('request', {})
-			if p.get('type') in ('XHR', 'Fetch') and 'shotdeck.com' in req.get('url', ''):
+		def on_request(event: RequestWillBeSentEvent, session_id: str | None) -> None:
+			req = event.get('request') or {}
+			if event.get('type') in ('XHR', 'Fetch') and 'shotdeck.com' in req.get('url', ''):
 				xhr.append({'method': req.get('method'), 'url': req.get('url')})
 
 		client.register.Network.requestWillBeSent(on_request)
@@ -47,7 +47,7 @@ async def main() -> None:
 		# Scroll the gallery to force the next batch to load.
 		for _ in range(6):
 			await ev(
-				"(() => { window.scrollTo(0, document.body.scrollHeight); "
+				'(() => { window.scrollTo(0, document.body.scrollHeight); '
 				"const s = document.getElementById('stills'); if (s) s.scrollTop = s.scrollHeight; return true; })()"
 			)
 			await asyncio.sleep(1.5)
@@ -59,7 +59,7 @@ async def main() -> None:
 			if base in seen:
 				continue
 			seen.add(base)
-			print(f"{e['method']:5} {e['url'][:180]}")
+			print(f'{e["method"]:5} {e["url"][:180]}')
 
 		count_now = await ev("document.querySelectorAll('.outerimage[data-shotid]').length")
 		print(f'\ncards after scroll: {count_now}')
