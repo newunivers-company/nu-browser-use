@@ -13,6 +13,11 @@ import pytest
 from pydantic import BaseModel
 
 
+def _ripgrep_fixture_name() -> str:
+	"""Whatever browser_use.beta.service looks for on this platform."""
+	return 'rg.exe' if os.name == 'nt' else 'rg'
+
+
 @pytest.fixture(autouse=True)
 def _disable_beta_agent_latest_version_check(monkeypatch):
 	import browser_use.beta.service as beta_service
@@ -23,6 +28,25 @@ def _disable_beta_agent_latest_version_check(monkeypatch):
 	monkeypatch.setattr(beta_service, 'check_latest_browser_use_version', no_latest_version)
 	monkeypatch.delenv('DEFAULT_LLM', raising=False)
 	monkeypatch.setenv('BROWSER_USE_API_KEY', 'test-browser-use-api-key')
+
+	# beta.Agent resolves a keyless LLM at construction, so the tests below that
+	# build one — to read back _run_env() or the translated cdp headers, never to
+	# call a model — need *some* runtime to resolve. A developer machine has a
+	# signed-in Codex/Claude/Grok CLI and this is a no-op; a CI runner has neither
+	# a CLI nor any API key, and the constructor raised
+	#   ValueError: No keyless LLM runtime is available
+	# on the first such test in the file. Naming a local model is the documented
+	# alternative and satisfies resolution without a network call.
+	#
+	# Conditional rather than unconditional: KEYLESS_LLM_MODEL outranks an
+	# auto-detected CLI in resolve_runtime_llm's AUTO branch, so setting it always
+	# would quietly move every developer's runs onto a backend they do not use.
+	from browser_use.runtime import resolve_runtime_llm
+
+	try:
+		resolve_runtime_llm()
+	except ValueError:
+		monkeypatch.setenv('KEYLESS_LLM_MODEL', 'qwen3:0.6b')
 
 
 def test_top_level_agent_preserves_python_service():
@@ -2691,7 +2715,10 @@ def test_beta_agent_run_env_sets_packaged_agent_tools_dir(monkeypatch, tmp_path)
 	terminal.parent.mkdir(parents=True)
 	agent_tools.mkdir(parents=True)
 	terminal.write_text('#!/bin/sh\n')
-	(agent_tools / 'rg').write_text('#!/bin/sh\n')
+	# The production lookup is platform-aware (rg.exe on Windows, rg elsewhere),
+	# so the fixture has to be too. A bare 'rg' made this pass on Linux and fail
+	# on the very workstation the code is developed on.
+	(agent_tools / _ripgrep_fixture_name()).write_text('#!/bin/sh\n')
 
 	class PackagedCore:
 		@staticmethod
@@ -2723,7 +2750,10 @@ def test_beta_agent_run_env_preserves_explicit_agent_tools_dir(monkeypatch, tmp_
 
 	agent_tools = tmp_path / 'agent-tools'
 	agent_tools.mkdir()
-	(agent_tools / 'rg').write_text('#!/bin/sh\n')
+	# The production lookup is platform-aware (rg.exe on Windows, rg elsewhere),
+	# so the fixture has to be too. A bare 'rg' made this pass on Linux and fail
+	# on the very workstation the code is developed on.
+	(agent_tools / _ripgrep_fixture_name()).write_text('#!/bin/sh\n')
 
 	monkeypatch.setenv('BUT_AGENT_TOOLS_DIR', str(agent_tools))
 	monkeypatch.setenv('PATH', '/usr/bin')
