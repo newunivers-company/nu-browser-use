@@ -69,12 +69,17 @@ only=("$@")
 # stages along with the data. It is not enforced in code: the stage-3 script
 # (sync_all.ps1) is not present in this repo, on the NAS, or in $HOME, so nothing
 # here can refuse on its behalf.
+# social_render_check is a verdict, not a catalogue: one report.json recording
+# what an anonymous rendered visit to Instagram and TikTok actually returns. It
+# stages because docs/collection-policy.md principle 2 is argued from it — the
+# evidence for "we do not collect this" has to outlive the workstation that
+# produced it, or the next person re-litigates the question from scratch.
 mapfile -t candidates < <(
 	find "$HOME_ROOT" -maxdepth 1 -mindepth 1 -type d \
 		\( -name '*_export' \
 		   -o -name 'source_loop' -o -name 'source_harvest' -o -name 'source_review' \
 		   -o -name 'newtoki_watch' -o -name 'newtoki_market' -o -name 'catalog_posters' \
-		   -o -name 'trope_rank' -o -name 'collect_cycle' \) \
+		   -o -name 'trope_rank' -o -name 'collect_cycle' 		   -o -name 'social_render_check' \) \
 		-printf '%f\n' 2>/dev/null | sort
 )
 

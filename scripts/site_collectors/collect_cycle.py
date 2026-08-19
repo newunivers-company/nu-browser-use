@@ -162,8 +162,12 @@ WEEKLY: list[tuple[str, list[str], int]] = [
 
 # Deliberately NOT scheduled, so an omission reads as a decision rather than an
 # oversight:
-#   one-shot corpora        gutenberg_catalog, loc, wikidata_graph, videofeedback
-#                           — static datasets; re-running them yields the same rows
+#   one-shot corpora        gutenberg_catalog, loc, loc_reference_images,
+#                           wikidata_graph, videofeedback — static datasets;
+#                           re-running them yields the same rows. loc_reference_images
+#                           pulls public-domain stills against a fixed
+#                           directing-intent query list, so a second pass
+#                           re-downloads the same files for no new signal.
 #   operator-session bound  pin_collect, shotdeck_* — need a signed-in browser
 #                           and should not run unattended
 #   superseded              dramabox_collect (dramaboxdb_collect covers DramaBox
@@ -180,14 +184,22 @@ WEEKLY: list[tuple[str, list[str], int]] = [
 #                           has taken one of the paths GDELT names.
 #   recon, not collection   promo_recon, newtoki_calibrate, login_source_probe,
 #                           promo_browser_collect, browser_upgrade_review,
-#                           browser_render_probe — run by hand when a source's
-#                           shape, or what to build next, is in question. The
+#                           browser_render_probe, social_render_check — run by
+#                           hand when a source's shape, or what to build next,
+#                           is in question. The
 #                           render probe in particular launches one Chromium per
 #                           source and answers a question that only changes when
 #                           a site is rebuilt.
 #   one-shot asset pulls    vigloo_assets, vigloo_episode_thumbs — posters and
 #                           episode stills are fetched once and cached; re-running
 #                           re-downloads images for no new signal
+#   permission-gated pull   stillslab_download — refuses to start without a
+#                           written-permission record on disk, and the terms
+#                           recorded there are per-use rather than standing. A
+#                           scheduled run would either refuse every week or keep
+#                           pulling a third party's frames unattended on a
+#                           permission nobody re-read; it is run by hand after
+#                           stillslab_collect refreshes the inventory.
 #   operator-supplied list  instagram_post_collect — reads only the post URLs it
 #                           is handed, so there is no standing target set to run
 #                           against. Scheduling it would mean either an empty run
@@ -227,11 +239,48 @@ UNSCHEDULED_BY_DESIGN = {
 	'fal_collect.py',
 	'vigloo_assets.py',
 	'vigloo_episode_thumbs.py',
+	'loc_reference_images.py',
+	'social_render_check.py',
+	'stillslab_download.py',
 	'newtoki_market_intel.py',
 	'newtoki_work_meta.py',
 	'instagram_post_collect.py',
 	'build_watchlist.py',
 }
+
+
+def supersede_existing_record(report_path: Path) -> Path | None:
+	"""Move an existing record for the same day aside; return where it went.
+
+	Run records are keyed by date, so a second run the same day lands on the
+	same path. The dry-run guard below covers the case that was noticed; a real
+	re-run is the case that was not, and it erased the 2026-08-19 05:00 record
+	the same afternoon. Both runs are true history — the morning one is not
+	less complete, it is a different run — so this keeps rather than compares.
+
+	run_cycle.cmd already had this right: it appends to its log, which is why
+	the morning's step list survived at all.
+
+	An unreadable record is kept too, under an `unreadable` stamp. Whatever went
+	wrong there is worth having, and it is certainly not worth overwriting.
+	"""
+	if not report_path.exists():
+		return None
+	try:
+		stamp = str(json.loads(report_path.read_text(encoding='utf-8'))['started_at'])
+	except (OSError, ValueError, KeyError, TypeError):
+		stamp = 'unreadable'
+	# Windows rejects `:` in a filename, and an ISO timestamp is full of them.
+	safe = stamp.replace(':', '').replace('.', '-')
+	destination = report_path.parent / 'superseded'
+	destination.mkdir(parents=True, exist_ok=True)
+	kept = destination / f'{safe}-{report_path.name}'
+	suffix = 1
+	while kept.exists():
+		suffix += 1
+		kept = destination / f'{safe}-{suffix}-{report_path.name}'
+	report_path.replace(kept)
+	return kept
 
 
 def env_for_step() -> dict[str, str]:
@@ -431,6 +480,9 @@ def main() -> int:
 	if args.dry_run and report_path.exists():
 		print(f'\n(dry run) leaving the existing record at {report_path} untouched')
 	else:
+		superseded = supersede_existing_record(report_path)
+		if superseded is not None:
+			print(f'\nearlier record for today kept at {superseded}')
 		report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
 
 	failed = [r for r in results if r['status'] in ('failed', 'timeout')]

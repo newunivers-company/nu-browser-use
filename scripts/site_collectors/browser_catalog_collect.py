@@ -307,11 +307,39 @@ def append_deduped(path: Path, rows: list[dict], key) -> int:
 	return len(fresh)
 
 
+def snapshot_would_regress(path: Path, rows: list[dict]) -> bool:
+	"""True when today's snapshot already holds boards this run does not.
+
+	Dated snapshots are keyed by date alone, so a second run the same day writes
+	to the same path. On 2026-08-17 a partial kuaikan run replaced the scheduled
+	one and board_movement read the boards that went missing as 95 exits, then
+	their return the next morning as 37 entries — phantom movement in the one
+	output the boards exist to produce.
+
+	Boards are the unit rather than items: item counts move for real reasons, a
+	whole board disappearing is structural. An unreadable prior file is not a
+	reason to refuse — a corrupt snapshot is worth replacing.
+	"""
+	if not path.exists():
+		return False
+	try:
+		prior = json.loads(path.read_text(encoding='utf-8'))
+		prior_boards = {item['board'] for item in prior['items']}
+	except (OSError, ValueError, KeyError, TypeError):
+		return False
+	return not prior_boards <= {row['board'] for row in rows}
+
+
 async def main() -> None:
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--sources', nargs='*', default=list(SOURCES), choices=list(SOURCES))
 	parser.add_argument('--boards', type=int, help='boards per source (default: the source cap)')
 	parser.add_argument('--headful', action='store_true')
+	parser.add_argument(
+		'--force-snapshot',
+		action='store_true',
+		help="replace today's snapshot even if this run carries fewer boards",
+	)
 	args = parser.parse_args()
 
 	today = dt.date.today().isoformat()
@@ -334,10 +362,25 @@ async def main() -> None:
 			continue
 
 		source_dir = OUT_DIR / name
-		(snap_dir / f'{name}.json').write_text(
-			json.dumps({'source': name, 'date': today, 'count': len(rows), 'items': rows}, ensure_ascii=False, indent=1),
-			encoding='utf-8',
-		)
+		snap_path = snap_dir / f'{name}.json'
+		if snapshot_would_regress(snap_path, rows) and not args.force_snapshot:
+			# Refuse the snapshot, keep the union: everything below still runs,
+			# so nothing this run collected is lost — only the day's ordered
+			# observation is left as the fuller run wrote it.
+			missing = sorted(
+				{item['board'] for item in json.loads(snap_path.read_text(encoding='utf-8'))['items']}
+				- {r['board'] for r in rows}
+			)
+			print(
+				f'  {name}: KEEPING the existing {today} snapshot — this run is missing '
+				f'{len(missing)} board(s) the file already holds ({", ".join(missing)}). '
+				f'The union below still takes everything collected. Pass --force-snapshot to overwrite anyway.'
+			)
+		else:
+			snap_path.write_text(
+				json.dumps({'source': name, 'date': today, 'count': len(rows), 'items': rows}, ensure_ascii=False, indent=1),
+				encoding='utf-8',
+			)
 		unique = {(r['board'], r['id']): r for r in rows}
 		new_items = append_deduped(source_dir / 'items.jsonl', list(unique.values()), lambda r: r['id'])
 		observations = [
@@ -351,6 +394,15 @@ async def main() -> None:
 				'scope': {'type': 'platform', 'platform': name, 'board': r['board']},
 				'period': {'type': 'daily'},
 				'rank': r['rank'],
+				# The ledger is the durable record and the snapshot is not — a
+				# same-day re-run used to be able to replace the snapshot, and on
+				# 2026-08-17 one did. It could only be repaired from here for
+				# membership: board_movement analyses dom_position (kuaikan's
+				# card numbers freeze for days while the DOM order moves daily)
+				# and that field was never written to the ledger, so the day's
+				# actual ordering was gone. It is written now.
+				'dom_position': r.get('dom_position'),
+				'rank_from': r.get('rank_from'),
 				'raw_metric_name': None,
 				'raw_score': None,
 				'label': r.get('label'),

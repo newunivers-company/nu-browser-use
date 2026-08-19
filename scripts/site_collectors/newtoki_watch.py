@@ -265,20 +265,52 @@ def fragments(title: str) -> list[str]:
 
 
 def parse_watchlist(path: Path) -> list[dict]:
-	"""One work per line; `|`-separated aliases are all searched."""
+	"""One work per line.
+
+	Two line shapes share the file:
+	  title|alias|alias...          — aliases, all searched (legacy shape)
+	  title|platform|id|locale      — provenance shape from build_watchlist.py:
+	  platform is one of vigloo/reelshort, so the trailing three fields are
+	  never titles. A match on any line records which program it points at,
+	  which is what the 08-17 triage was missing.
+
+	The provenance triple is read off the END of the line, not position 1.
+	build_watchlist.py writes it as a suffix, and a title is free to contain a
+	`|` of its own — anchoring at the head loses provenance for exactly those
+	titles, which is the failure mode this shape existed to prevent. The id and
+	locale must look like an id and a locale — vigloo numbers them, reelshort
+	uses 24-char hex, and neither carries a space — so a legacy line whose alias
+	happens to read `vigloo` cannot be mistaken for provenance.
+	"""
+	PROVENANCE_PLATFORMS = {'vigloo', 'reelshort'}
 	works: list[dict] = []
 	for line in path.read_text(encoding='utf-8').splitlines():
 		line = line.strip()
 		if not line or line.startswith('#'):
 			continue
-		names = [part.strip() for part in line.split('|') if part.strip()]
+		parts = [part.strip() for part in line.split('|') if part.strip()]
+		provenance = None
+		looks_like_provenance = (
+			len(parts) >= 4
+			and parts[-3].lower() in PROVENANCE_PLATFORMS
+			and parts[-2].isalnum()
+			and len(parts[-1]) <= 12
+			and ' ' not in parts[-1]
+		)
+		if looks_like_provenance:
+			provenance = {'platform': parts[-3], 'program_id': parts[-2], 'locale': parts[-1]}
+			parts = parts[:-3]
+		names = parts
 		if names:
 			probes: list[str] = []
 			for name in names:
 				for piece in fragments(name):
 					if piece not in names and piece not in probes:
 						probes.append(piece)
-			works.append({'title': names[0], 'aliases': names[1:], 'queries': names, 'fragments': probes})
+			entry = {'title': names[0], 'aliases': names[1:], 'queries': names, 'fragments': probes}
+			if provenance:
+				entry['provenance'] = provenance
+			works.append(entry)
 	return works
 
 
@@ -414,15 +446,18 @@ async def check_detector(session: BrowserSession, host: str, sections: list[str]
 		await asyncio.sleep(1.5)
 		nonsense = await search(session, host, NONSENSE_QUERY, section)
 		per_section[section] = {
-			'control_hits': len(control), 'nonsense_hits': len(nonsense),
+			'control_hits': len(control),
+			'nonsense_hits': len(nonsense),
 			'status': 'verified' if control and not nonsense else 'unverified',
 		}
 		await asyncio.sleep(1.5)
 	verified = [s for s, v in per_section.items() if v['status'] == 'verified']
 	return {
 		'detector_status': 'verified' if len(verified) == len(sections) else ('partial' if verified else 'unverified'),
-		'control_query': CONTROL_QUERY, 'nonsense_query': NONSENSE_QUERY,
-		'sections': per_section, 'sections_verified': verified,
+		'control_query': CONTROL_QUERY,
+		'nonsense_query': NONSENSE_QUERY,
+		'sections': per_section,
+		'sections_verified': verified,
 		'control_hits': sum(v['control_hits'] for v in per_section.values()),
 		'nonsense_hits': sum(v['nonsense_hits'] for v in per_section.values()),
 	}
@@ -462,7 +497,9 @@ async def main() -> None:
 	parser.add_argument('--self-test', action='store_true', help='run the control queries only')
 	parser.add_argument('--headful', action='store_true')
 	parser.add_argument('--no-fragments', action='store_true', help='whole titles only; skip substring probes')
-	parser.add_argument('--recent', type=int, metavar='PAGES', help='also scan N pages of each recent-uploads listing against the watchlist')
+	parser.add_argument(
+		'--recent', type=int, metavar='PAGES', help='also scan N pages of each recent-uploads listing against the watchlist'
+	)
 	args = parser.parse_args()
 	use_fragments = not args.no_fragments
 
@@ -475,7 +512,9 @@ async def main() -> None:
 	if works:
 		alias_count = sum(len(w['aliases']) for w in works)
 		fragment_count = sum(len(w['fragments']) for w in works) if use_fragments else 0
-		print(f'watchlist: {len(works)} works, {alias_count} aliases, {fragment_count} fragment probes (rights-protection mode, our titles only)')
+		print(
+			f'watchlist: {len(works)} works, {alias_count} aliases, {fragment_count} fragment probes (rights-protection mode, our titles only)'
+		)
 
 	today = dt.date.today().isoformat()
 	now = dt.datetime.now(dt.timezone.utc).isoformat()
@@ -486,7 +525,9 @@ async def main() -> None:
 	per_work: list[dict] = []
 	sightings: list[dict] = []
 	with tempfile.TemporaryDirectory(prefix='newtoki_') as profile_dir:
-		profile = BrowserProfile(headless=not args.headful, keep_alive=False, user_data_dir=Path(profile_dir), allowed_domains=ALLOWED)
+		profile = BrowserProfile(
+			headless=not args.headful, keep_alive=False, user_data_dir=Path(profile_dir), allowed_domains=ALLOWED
+		)
 		session = BrowserSession(browser_profile=profile)
 		detector: dict = {'detector_status': 'unverified'}
 		host = None
@@ -502,8 +543,12 @@ async def main() -> None:
 				print(f'[control] verifying the detector on {host}')
 				detector = await check_detector(session, host, SECTIONS)
 				for section, stats in detector['sections'].items():
-					print(f'  /{section:9} control={stats["control_hits"]:<4} nonsense={stats["nonsense_hits"]:<3} {stats["status"]}')
-				print(f'  detector: {detector["detector_status"].upper()} ({len(detector["sections_verified"])}/{len(SECTIONS)} sections)')
+					print(
+						f'  /{section:9} control={stats["control_hits"]:<4} nonsense={stats["nonsense_hits"]:<3} {stats["status"]}'
+					)
+				print(
+					f'  detector: {detector["detector_status"].upper()} ({len(detector["sections_verified"])}/{len(SECTIONS)} sections)'
+				)
 				if detector['detector_status'] != 'verified':
 					blind = [s for s in SECTIONS if s not in detector['sections_verified']]
 					print(f'  WARNING: no observation for {", ".join(blind) or "any section"} — a zero there means nothing')
@@ -520,7 +565,9 @@ async def main() -> None:
 					detector['evidence_fields'] = populated
 					detector['evidence_status'] = 'verified' if evidence.get('episode_count') else 'unverified'
 					print(f'[control] evidence extraction: {detector["evidence_status"].upper()}')
-					print(f'  episodes={evidence.get("episode_count")} range={evidence.get("episode_min")}-{evidence.get("episode_max")} dates={len(evidence.get("upload_dates") or [])}')
+					print(
+						f'  episodes={evidence.get("episode_count")} range={evidence.get("episode_min")}-{evidence.get("episode_max")} dates={len(evidence.get("upload_dates") or [])}'
+					)
 					print(f'  populated fields: {", ".join(populated)}')
 
 			# Recent-uploads pass. The listing is read once per section, compared
@@ -542,7 +589,9 @@ async def main() -> None:
 								if best_kind == 'exact':
 									break
 							if best_kind in ('exact', 'near'):
-								recent_hits.append({**row, 'our_title': work['title'], 'match': best_kind, 'score': round(best_score, 3)})
+								recent_hits.append(
+									{**row, 'our_title': work['title'], 'match': best_kind, 'score': round(best_score, 3)}
+								)
 								break
 				print(f'[recent] compared {scanned_rows} listed entries against {len(works)} works -> {len(recent_hits)} match')
 				for hit in recent_hits:
@@ -561,7 +610,9 @@ async def main() -> None:
 				# Whole names first, then fragments. Fragment hits are never promoted
 				# to `exact` on their own — a piece of our title matching some
 				# other work is exactly what a crowded fragment query returns.
-				probe_plan = [(name, False) for name in work['queries']] + [(piece, True) for piece in (work['fragments'] if use_fragments else [])]
+				probe_plan = [(name, False) for name in work['queries']] + [
+					(piece, True) for piece in (work['fragments'] if use_fragments else [])
+				]
 				for query, is_fragment in probe_plan:
 					try:
 						results = await search_all(session, host, query, SECTIONS)
@@ -592,34 +643,54 @@ async def main() -> None:
 				for hit in exact + near:
 					evidence = await collect_evidence(session, hit['url'])
 					entry = update_recurrence(recurrence, work['title'], f'{hit["section"]}:{hit["id"]}', today)
-					sightings.append({
-						'our_title': work['title'], 'matched_title': hit['title'], 'series_id': hit['id'],
-						'section': hit['section'],
-						'url': hit['url'], 'match': 'exact' if hit in exact else 'near',
-						'score': hit['score'], 'via_query': hit['via_query'],
-						'host': host, 'detector_status': detector['detector_status'],
-						'episode_count': evidence.get('episode_count'),
-						'episode_range': [evidence.get('episode_min'), evidence.get('episode_max')],
-						'latest_upload': evidence.get('latest_upload'),
-						'upload_dates': evidence.get('upload_dates'),
-						'author_line': evidence.get('author_line'), 'status_line': evidence.get('status_line'),
-						'cover_url': evidence.get('cover_url'),
-						'image_hosts': evidence.get('image_hosts'),
-						'image_asset_count': evidence.get('image_asset_count'),
-						'first_seen': entry['first_seen'], 'last_seen': entry['last_seen'], 'times_seen': entry['times_seen'],
-						'observed_at': now,
-					})
+					sightings.append(
+						{
+							'our_title': work['title'],
+							'matched_title': hit['title'],
+							'series_id': hit['id'],
+							'our_platform': (work.get('provenance') or {}).get('platform'),
+							'our_program_id': (work.get('provenance') or {}).get('program_id'),
+							'our_locale': (work.get('provenance') or {}).get('locale'),
+							'section': hit['section'],
+							'url': hit['url'],
+							'match': 'exact' if hit in exact else 'near',
+							'score': hit['score'],
+							'via_query': hit['via_query'],
+							'host': host,
+							'detector_status': detector['detector_status'],
+							'episode_count': evidence.get('episode_count'),
+							'episode_range': [evidence.get('episode_min'), evidence.get('episode_max')],
+							'latest_upload': evidence.get('latest_upload'),
+							'upload_dates': evidence.get('upload_dates'),
+							'author_line': evidence.get('author_line'),
+							'status_line': evidence.get('status_line'),
+							'cover_url': evidence.get('cover_url'),
+							'image_hosts': evidence.get('image_hosts'),
+							'image_asset_count': evidence.get('image_asset_count'),
+							'first_seen': entry['first_seen'],
+							'last_seen': entry['last_seen'],
+							'times_seen': entry['times_seen'],
+							'observed_at': now,
+						}
+					)
 					await asyncio.sleep(1.5)
 
-				per_work.append({
-					'title': work['title'], 'aliases': work['aliases'],
-					'fragments': work['fragments'] if use_fragments else [],
-					'results_scanned': scanned, 'exact': len(exact), 'near': len(near),
-					'near_via_fragment': sum(1 for h in near if h['via_fragment']),
-				})
+				per_work.append(
+					{
+						'title': work['title'],
+						'aliases': work['aliases'],
+						'fragments': work['fragments'] if use_fragments else [],
+						'results_scanned': scanned,
+						'exact': len(exact),
+						'near': len(near),
+						'near_via_fragment': sum(1 for h in near if h['via_fragment']),
+					}
+				)
 				sections_hit = sorted({h['section'] for h in exact + near})
 				where = f' in {",".join(sections_hit)}' if sections_hit else ''
-				print(f'[{index}/{len(works)}] "{work["title"]}" ({len(work["queries"])} queries x {len(SECTIONS)} sections): exact={len(exact)} near={len(near)} scanned={scanned}{where}')
+				print(
+					f'[{index}/{len(works)}] "{work["title"]}" ({len(work["queries"])} queries x {len(SECTIONS)} sections): exact={len(exact)} near={len(near)} scanned={scanned}{where}'
+				)
 		finally:
 			await session.kill()
 
@@ -629,9 +700,18 @@ async def main() -> None:
 				handle.write(json.dumps(record, ensure_ascii=False) + '\n')
 	(OUT_DIR / 'recurrence.json').write_text(json.dumps(recurrence, ensure_ascii=False, indent=2), encoding='utf-8')
 	(runs_dir / f'{today}.json').write_text(
-		json.dumps({'date': today, 'host': host, **detector, 'works': per_work, 'sightings': len(sightings),
-					'recent_scan': {'pages': args.recent, 'matches': recent_hits} if args.recent else None},
-					ensure_ascii=False, indent=2),
+		json.dumps(
+			{
+				'date': today,
+				'host': host,
+				**detector,
+				'works': per_work,
+				'sightings': len(sightings),
+				'recent_scan': {'pages': args.recent, 'matches': recent_hits} if args.recent else None,
+			},
+			ensure_ascii=False,
+			indent=2,
+		),
 		encoding='utf-8',
 	)
 

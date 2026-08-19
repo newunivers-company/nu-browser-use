@@ -26,19 +26,32 @@ REELSHORT = Path(r'C:\Users\USER\reelshort_export\books.json')
 OUT = Path(r'C:\Users\USER\watchlist_provenanced.txt')
 
 
+def watchlist_line(title: str | None, platform: str, program_id: str, locale: str) -> str | None:
+	"""One record, or None if there is no usable title.
+
+	Collapses internal whitespace, not just the ends. Four vigloo titles carry a
+	newline inside them and .strip() left it there, so the record was written
+	across two physical lines: the reader saw an orphan title fragment with no
+	provenance, followed by a line whose title field was the second half of
+	someone else's title. A reader cannot undo that — one record per line is the
+	format's only invariant and it has to hold where the line is written.
+	"""
+	title = ' '.join((title or '').split())
+	if len(title) < 2:
+		return None
+	return f'{title}|{platform}|{program_id}|{locale}'
+
+
 def main() -> None:
 	lines: list[str] = []
 	seen: set[str] = set()
 
 	def add(title: str, platform: str, program_id: str, locale: str) -> None:
-		title = (title or '').strip()
-		if not title or len(title) < 2:
+		line = watchlist_line(title, platform, program_id, locale)
+		if line is None or line in seen:
 			return
-		key = f'{platform}|{program_id}|{locale}|{title}'
-		if key in seen:
-			return
-		seen.add(key)
-		lines.append(f'{title}|{platform}|{program_id}|{locale}')
+		seen.add(line)
+		lines.append(line)
 
 	programs = json.loads(VIGLOO.read_text(encoding='utf-8'))
 	for program in programs:

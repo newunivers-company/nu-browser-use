@@ -78,8 +78,19 @@ def analyze(source: str) -> tuple[list[dict], dict]:
 				# days while the DOM order moves daily, so rank (card) is the
 				# weekly ladder and dom_position is the daily one. Analyze the
 				# daily one; keep the card number alongside for reference.
-				prev_rank = prev_items[work_id].get('dom_position') or prev_items[work_id].get('rank')
-				cur_rank = cur_items[work_id].get('dom_position') or cur_items[work_id].get('rank')
+				#
+				# Both sides must offer the same ladder. Falling back per side
+				# subtracts a card number from a DOM position and calls the
+				# difference movement — which is what the previous `or` chain
+				# did the moment one day's snapshot lacked dom_position, as the
+				# 2026-08-17 repair does.
+				ordinal = (
+					'dom_position'
+					if prev_items[work_id].get('dom_position') is not None and cur_items[work_id].get('dom_position') is not None
+					else 'rank'
+				)
+				prev_rank = prev_items[work_id].get(ordinal)
+				cur_rank = cur_items[work_id].get(ordinal)
 				if prev_rank is None or cur_rank is None:
 					continue
 				delta = prev_rank - cur_rank  # positive = moved up
@@ -93,13 +104,16 @@ def analyze(source: str) -> tuple[list[dict], dict]:
 						'from_day': prev_day,
 						'to_day': cur_day,
 						'kind': 'move',
+						'ordinal': ordinal,
 						'prev_rank': prev_rank,
 						'cur_rank': cur_rank,
 						'delta': delta,
 					}
 				)
 				if delta > 0:
-					gainers.append({'work_id': work_id, 'title': cur_items[work_id].get('title'), 'delta': delta, 'to_rank': cur_rank})
+					gainers.append(
+						{'work_id': work_id, 'title': cur_items[work_id].get('title'), 'delta': delta, 'to_rank': cur_rank}
+					)
 				pair_moves += 1
 
 			for work_id in board_entries:
@@ -162,7 +176,7 @@ def analyze(source: str) -> tuple[list[dict], dict]:
 				by_work[(work_id, day)].add(board)
 	summary['hoppers'] = []
 	for prev_day, cur_day in zip(day_names, day_names[1:]):
-		for (work_id, day) in [(k[0], k[1]) for k in by_work if k[1] == cur_day]:
+		for work_id, day in [(k[0], k[1]) for k in by_work if k[1] == cur_day]:
 			prev_boards_for_work = by_work.get((work_id, prev_day), set())
 			cur_boards_for_work = by_work[(work_id, cur_day)]
 			new_boards = cur_boards_for_work - prev_boards_for_work
@@ -171,7 +185,9 @@ def analyze(source: str) -> tuple[list[dict], dict]:
 					(days[cur_day][b][work_id].get('title') for b in cur_boards_for_work if work_id in days[cur_day][b]),
 					None,
 				)
-				summary['hoppers'].append({'work_id': work_id, 'title': title, 'from': prev_day, 'to': cur_day, 'joined': sorted(new_boards)})
+				summary['hoppers'].append(
+					{'work_id': work_id, 'title': title, 'from': prev_day, 'to': cur_day, 'joined': sorted(new_boards)}
+				)
 	return transitions, summary
 
 
@@ -186,10 +202,12 @@ def main() -> None:
 				handle.write(json.dumps(row, ensure_ascii=False) + '\n')
 		all_summary[source] = summary
 		for pair in summary['pairs']:
-			print(f"{source} {pair['from']} -> {pair['to']}: moves={pair['moves']} entries={pair['entries']} exits={pair['exits']}")
+			print(
+				f'{source} {pair["from"]} -> {pair["to"]}: moves={pair["moves"]} entries={pair["entries"]} exits={pair["exits"]}'
+			)
 		for hop in summary['hoppers'][:5]:
-			print(f"  hop: {hop['title']} joined {hop['joined']} ({hop['from']}->{hop['to']})")
-		print(f"  {len(transitions)} transitions -> {out_path.name}")
+			print(f'  hop: {hop["title"]} joined {hop["joined"]} ({hop["from"]}->{hop["to"]})')
+		print(f'  {len(transitions)} transitions -> {out_path.name}')
 	(OUT_DIR / 'summary.json').write_text(json.dumps(all_summary, ensure_ascii=False, indent=1), encoding='utf-8')
 	print(f'DONE -> {OUT_DIR}')
 
